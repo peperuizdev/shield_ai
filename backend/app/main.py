@@ -16,6 +16,13 @@ from core.redis_client import get_redis_client
 from services.session_manager import get_anonymization_map
 from models.requests import DeAnonymizationRequest
 
+# === AÑADIDO: Montar routers de health y sessions ===
+from api.routes.health import router as health_router
+from api.routes.sessions import router as sessions_router
+
+app.include_router(health_router)
+app.include_router(sessions_router)
+
 
 # === DEANONYMIZATION-SPECIFIC MODELS ===
 
@@ -199,7 +206,7 @@ async def dual_streaming_response(session_id: str):
                 # Send corresponding deanonymized chunk
                 if deanonymized_pos < len(full_deanonymized_text):
                     deanon_end = min(deanonymized_pos + chunk_size, len(full_deanonymized_text))
-                    deanon_chunk = full_deanonymized_text[deanonymized_pos:deanon_end]
+                    deanon_chunk = full_deanonymized_text[deanon_pos:deanon_end]
                     yield f"data: {{'type': 'deanonymized', 'chunk': '{deanon_chunk}'}}\n\n"
                     deanonymized_pos = deanon_end
                 
