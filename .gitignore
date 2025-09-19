@@ -119,7 +119,6 @@ secrets.json
 config/local.json
 
 # ML Models (large files)
-models/
 *.model
 *.pkl
 *.joblib
