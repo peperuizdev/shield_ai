@@ -1,0 +1,25 @@
+# Core dependencies for Shield AI Backend
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings>=2.0.0
+redis>=5.0.0
+
+# PII Detection dependencies
+torch>=2.0.0
+transformers>=4.35.0
+numpy>=1.24.0
+
+# Utility dependencies
+python-multipart==0.0.6
+python-dotenv==1.0.0
+requests>=2.31.0
+
+# Development dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+
+# Optional: For better performance
+# accelerate>=0.24.0  # Uncomment for GPU acceleration
+# datasets>=2.14.0   # Uncomment for model training
