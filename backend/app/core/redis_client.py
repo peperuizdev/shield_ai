@@ -3,9 +3,6 @@ Redis client configuration and connection management for Shield AI.
 
 Provides Redis connection handling, health checks, and connection pooling
 for session management and caching.
-
-Author: Shield AI Team - Backend Developer
-Date: 2025-09-19
 """
 
 import redis
