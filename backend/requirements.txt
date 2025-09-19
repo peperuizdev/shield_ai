@@ -2,6 +2,8 @@
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
+pydantic-settings>=2.0.0
+redis>=5.0.0
 
 # PII Detection dependencies
 torch>=2.0.0
