@@ -199,7 +199,7 @@ class AnonymizationRequest(BaseModel):
     replacement_strategy: Optional[str] = Field(
         "synthetic",
         description="Strategy for replacing PII",
-        regex=r'^(synthetic|placeholder|custom)$',
+        pattern=r'^(synthetic|placeholder|custom)$',
         example="synthetic"
     )
     
@@ -232,7 +232,7 @@ class BulkProcessingRequest(BaseModel):
     processing_type: str = Field(
         ...,
         description="Type of processing to perform",
-        regex=r'^(detect|anonymize|deanonymize)$',
+        pattern=r'^(detect|anonymize|deanonymize)$',
         example="detect"
     )
     
