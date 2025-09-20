@@ -1,4 +1,4 @@
-# SHIELD3 — Estructura y Función de Archivos
+Estructura y Función de Archivos
 
 ## 1. Árbol de la estructura actual (con minidescripción)
 
