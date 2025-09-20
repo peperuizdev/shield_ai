@@ -18,7 +18,7 @@ PROYECTO_FINAL_SHIELD
 │                       └───revalidate_and_review.py # Script para revisar y validar mappings
 │                       └───run_cli_wrapper.py     # Wrapper CLI para ejecutar el pipeline desde la nueva estructura
 │                       └───run_interactive.ps1    # Script PowerShell para activar venv y lanzar el pipeline
-│                       └───sample_input.txt       # Ejemplo de entrada para pruebas en backend/app
+│                        
 │
 │
 │
@@ -39,7 +39,6 @@ PROYECTO_FINAL_SHIELD
 | activar.txt                   | Notas rápidas, comandos útiles y recordatorios. Incluye la línea para lanzar el pipeline interactivo. Útil para onboarding y referencia rápida. |
 | README.md (raíz y backend/app)| Documentación del proyecto y del submódulo backend/app. Explica cómo ejecutar, requisitos y estructura. Leer antes de empezar. |
 | requirements.txt (raíz y backend/app) | Listado de dependencias Python. Instalar con `pip install -r requirements.txt` antes de ejecutar scripts. |
-| sample_input.txt              | Ejemplo de texto para pruebas manuales del pipeline. Útil para validar funcionamiento y hacer tests rápidos. |
 | anonymization.py | Router FastAPI que expone el endpoint `/anonymize` (POST). Recibe JSON con texto y parámetros, llama al servicio de detección/anonimización. Usar para integración API. |
 | anonymized_map.json | Archivo JSON con el resultado de la anonimización (mapeo original → anonimizados). Útil para auditoría, revalidación y debugging. |
 | pii_detector.py | Módulo principal de procesamiento PII . Incluye la función `run_pipeline` y helpers para detección, regex, pseudonimización y reporte. Usar como núcleo del sistema. |
@@ -49,22 +48,8 @@ PROYECTO_FINAL_SHIELD
 
 ---
 
-## 3. Cuadro comparativo de funciones principales
 
-| Archivo/Script                | Antes (estructura antigua) | Después (estructura nueva) | Ventaja/Mejora |
-|-------------------------------|----------------------------|----------------------------|----------------|
-| pipeline.py                   | En la raíz, ejecutado directo | Renombrado a pii_detector.py en backend/app/services | Modularidad, integración API y CLI |
-| run_interactive.ps1           | En la raíz, lanzaba pipeline.py | En backend/app/services, lanza el wrapper y activa venv | Mejor organización, fácil de ubicar |
-| anonymized_map.json           | En la raíz o map/           | En backend/app/map/        | Separación clara de datos y lógica |
-| requirements.txt              | Único archivo global        | Separado por módulo        | Permite dependencias específicas por submódulo |
-| sample_input.txt              | En la raíz                  | Copia en backend/app/services | Pruebas localizadas y ejemplos por módulo |
-
----
-
-
-
-
-4. Run the interactive pipeline:
+3. Run the interactive pipeline:
 
 ```powershell
 .\backend\app\services\run_interactive.ps1
