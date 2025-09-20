@@ -3,22 +3,22 @@
 ## 1. Árbol de la estructura actual (con minidescripción)
 
 ```
-C:\Users\admin\Desktop\BETA\shield3
+PROYECTO_FINAL_SHIELD
 └───backend
 │         └app
-│               ├───api
-│               │         └───routes
-│               │                  └───anonymization.py   # Router FastAPI: endpoint /anonymize
-│               │
-│               ├───map
-│               │        └───anonymized_map.json    # Mapeo de datos anonimizados (JSON)
-│               │
-│               └───services
-│                          └───pii_detector.py        # Módulo principal de detección/anonimización PII
-│                          └───revalidate_and_review.py # Script para revisar y validar mappings
-│                          └───run_cli_wrapper.py     # Wrapper CLI para ejecutar el pipeline desde la nueva estructura
-│                          └───run_interactive.ps1    # Script PowerShell para activar venv y lanzar el pipeline
-│                          └───sample_input.txt       # Ejemplo de entrada para pruebas en backend/app
+│            ├───api
+│            │     └───routes
+│            │            └───anonymization.py   # Router FastAPI: endpoint /anonymize
+│            │
+│            ├───map
+│            │     └───anonymized_map.json    # Mapeo de datos anonimizados (JSON)
+│            │
+│            └───services
+│                       └───pii_detector.py        # Módulo principal de detección/anonimización PII
+│                       └───revalidate_and_review.py # Script para revisar y validar mappings
+│                       └───run_cli_wrapper.py     # Wrapper CLI para ejecutar el pipeline desde la nueva estructura
+│                       └───run_interactive.ps1    # Script PowerShell para activar venv y lanzar el pipeline
+│                       └───sample_input.txt       # Ejemplo de entrada para pruebas en backend/app
 │
 │
 │
