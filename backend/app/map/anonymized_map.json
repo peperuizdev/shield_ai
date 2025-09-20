@@ -1,0 +1,18 @@
+{
+  "anonymized": "Name: [PERSON_3]\nID: Zphone_48e1932dX\nEmail: [PERSON_2][PERSON_1]@gmail.com\nPhone: phone_4715225f\nAddress: [LOCATION_2] 123, [LOCATION_1]\nDOB: 07/03/1983\nCard: card_9bbef194\nBank: iban_b179add4\n[MISC_2][ORG_1]: usuario\nIP: 192.168.1.100\nGeo: 40.4168,-3.7038\n[MISC_1] fingerprint-001\nCombo: dob_13ae5d4c +",
+  "mapping": {
+    "dob_13ae5d4c": "07-03-1983",
+    "[MISC_1]": "Biometric: huella:",
+    "[ORG_1]": "tials",
+    "[MISC_2]": "Creden",
+    "iban_b179add4": "ES9121000418450200051332",
+    "card_9bbef194": "4111111111111111",
+    "[LOCATION_1]": "Madrid",
+    "[LOCATION_2]": "Calle Falsa",
+    "phone_4715225f": "+34642541238",
+    "[PERSON_1]": "xi",
+    "[PERSON_2]": "ma",
+    "[PERSON_3]": "Maximiliano Scarlato"
+  },
+  "backend": "hf:mrm8488/bert-spanish-cased-finetuned-ner+regex+pseudo"
+}

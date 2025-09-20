@@ -1,0 +1,75 @@
+Agregar una celda markdown con el diagrama en formato Mermaid y draw.io XML para documentación y uso directo.
+
+.\backend\app\services\run_interactive.ps1
+
+https://app.diagrams.net/
+
+& "C:\Users\admin\Desktop\PROYECTO\Hackaton_grupo3_backend\venv310\Scripts\Activate.ps1"
+
+
+VER PAGINA FREEPICK
+
+.\venv\Scripts\activate
+
+pip freeze > requirements.txt
+pip install -r requirements.txt
+
+EN EL CODIGO, COMENTA CADA LINEA EXPLICANDO PARA QUE SIRVE, DONDE COMO CUANDO Y PORQUE, explicalo de manera sencilla 
+PON TITULOS COMENTADOS A LOS CODIGOS, Y HAS UN INDICE COMENTADO EN LOS CODIGOS PARA SABER EL ORDEN DE LOS PASOS QUE SE FUERON SIGUIENT.
+DEBAJO DE CADA CODIGO, JUSTO POR DEBAJO, SIN ELIMINAR NADA. REALIZA UN CUADRO COMPARATIVO DE LO EMPLEADO, FUNCION, PARA QUE SIRVE, EL ANTES Y EL DESPUES DEL EMPLEO
+EXPLICA CON EJEMPLOS PARA que personas sin experiencia puedan entenderlo,  DE QUE SE TRATA EL CODIGO Y HAS UN CUENTO ENTENDIBLE DE LOS CODIGOS.
+
+
+<!--                    -->
+
+
+
+Necesito que realices las siguientes actividades, realiza el codigo, 
+comenta cada paso para que se entienda, separa por los incisos numerados 
+y letrados que pregunta la actividad a realizar. Realiza un resumen
+ visual facil de entender y cuadro comparativo con ejemplos y todo lo que se requiera.
+
+Dame la resolución de la tarea siguiendo este formato:
+- Explica primero qué quiere la actividad y qué se debe estudiar ( responde con detalle a 
+cada pregunta o inciso de lo que se debe estudiar de lo que pide la actividad, codigo explicado, 
+comentado y facil de entender, cuadros comparativos con ejemplos y todo lo que se requiera 
+faciles de entender)
+- Da el paso a paso de la actividad, explicado fácil y para exponer ante personas sin experiencia.
+- Incluye ejemplos visuales, conceptos clave en tabla, cuadro comparativo, con ejemplos y todo lo que se requiera y una narración visual y fácil.
+- Si hay código, sepáralo por número de actividad y comenta cada paso de forma sencilla.
+- No omitas ningún apartado ni explicación fácil.
+- Dame todo junto, bien ordenado y con títulos claros, igual que en el ejemplo que te mostré.
+
+
+
+GPT-4.1: Mejor para código, explicaciones profundas y tareas complejas.
+Gemini 2.5 Pro: Bueno para tareas generales, resúmenes y comprensión rápida.
+Sonnet 3.7: Útil para resúmenes, ideas y comprensión de textos.
+Sonnet 3.7 Thinking: Mejor para análisis, razonamiento y creatividad.
+
+
+
+***************************************************************************************
+Buenos días, os informarmos de la fecha, hora y lugar de celebración, prevista en principio, para el examen presencial del módulo que estáis realizando de CONSTRUCCION DE PAGINAS WEB:
+17/06/2025 - 09:00h A 13:00h. Centro de Formación Presencial: ADF Monkey School.
+
+DIRECCIÓN: Calle Getafe 13, Local 1 (28944) LOCALIDAD: Fuenlabrada PROVINCIA: Madrid
+Recordad que para tener derecho a presentarse al examen presencial, debéis realizar todas las tareas obligatorias en la plataforma online: Visualización de contenidos, test y actividades de aprendizaje, antes de la fecha de examen.
+Tenéis a vuestro tutor a disposición, para consultar cualquier duda o cuestión que necesitéis.
+¡Ánimo con el curso!
+Muchas gracias y un saludo.
+
+
+
+
+
+
+
+por favor, necesito que trasncribas todo el contido del pdf. Teniendo en cuenta lo siguiente:
+
+-Por favor, transcribe todo el contenido del PDF, incluyendo las preguntas con opciones múltiples, las frases, las oraciones y el texto de cualquier imagen. Asegúrate de enumerar cada elemento y de indicar las respuestas correctas en negrita, y las incorrectas con 'Incorrecto' al lado, incluso si están sombreadas en gris."
+-"Por favor, transcribe los  ejercicios de completar frases. Las palabras o frases que completan los huecos están marcadas con un fondo gris en las opciones proporcionadas. Incluye la frase completa y resuelta con su sombreado gris para que pueda distinguir lo que se completo."
+-Conserva los tonos de negro, aquellas frases que van en negrita pintalas de ese color.
+-Enumera las preguntas, con sus respuestas.
+-Por favor, transcribe el contenido de la imagen. Hay un diagrama con frases unidas por flechas o lineas; quiero que mantengas la secuencia y el orden indicado por esas flechas en tu transcripción. 
+-Si ves imagenes con preguntas de opcion multiple, y aparecen opciones con  con fondo gris, esasson las incorrectas. Pon a esas al lado " Incorrecto". Y a las otras pones al lado " correctas".
