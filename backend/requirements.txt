@@ -1,25 +1,94 @@
-# Core dependencies for Shield AI Backend
-fastapi==0.104.1
+# ================================
+# SHIELD AI BACKEND REQUIREMENTS
+# Compatible with Python 3.10.18
+# ================================
+
+# -------------------------
+# Core Web Framework
+# -------------------------
+fastapi==0.115.2
 uvicorn[standard]==0.24.0
-pydantic==2.5.0
-pydantic-settings>=2.0.0
+starlette>=0.37.2,<0.41.0
+python-multipart==0.0.20
+
+# -------------------------
+# Data Validation & Settings
+# -------------------------
+pydantic==2.11.7
+pydantic-settings==2.10.1
+pydantic_core==2.33.2
+typing-extensions==4.15.0
+annotated-types==0.7.0
+
+# -------------------------
+# Database & Caching
+# -------------------------
 redis>=5.0.0
 
-# PII Detection dependencies
-torch>=2.0.0
-transformers>=4.35.0
-numpy>=1.24.0
+# -------------------------
+# AI/ML Core Dependencies (CORREGIDO)
+# -------------------------
+torch==2.2.2
+transformers==4.39.3
+tokenizers==0.15.2
+huggingface-hub==0.20.3
+safetensors==0.4.2
+numpy==1.26.4
+faker==19.4.0
 
-# Utility dependencies
-python-multipart==0.0.6
+# -------------------------
+# HTTP & Networking (CORREGIDO)
+# -------------------------
+requests>=2.31.0,<3
+httpx==0.27.0
+httpcore==1.0.5
+certifi==2024.2.2
+urllib3==2.2.1
+
+# -------------------------
+# Utilities & Parsing (CORREGIDO)
+# -------------------------
 python-dotenv==1.0.0
-requests>=2.31.0
+python-dateutil==2.9.0.post0
+regex==2024.4.28
+PyYAML==6.0.1
+packaging==24.0
+filelock==3.13.1
+tqdm==4.66.2
 
-# Development dependencies
-pytest>=7.4.0
+# -------------------------
+# Optional: Enhanced PII Validation
+# -------------------------
+phonenumbers==8.13.35
+
+# -------------------------
+# Development & Testing
+# -------------------------
+pytest==7.4.4
 pytest-cov>=4.1.0
 pytest-asyncio>=0.21.0
+pytest-mock>=3.11.1
 
-# Optional: For better performance
-# accelerate>=0.24.0  # Uncomment for GPU acceleration
-# datasets>=2.14.0   # Uncomment for model training
+# -------------------------
+# JSON & Serialization (CORREGIDO)
+# -------------------------
+orjson==3.10.0
+
+# -------------------------
+# Async Support
+# -------------------------
+anyio==4.3.0
+
+# -------------------------
+# System Dependencies (CORREGIDO)
+# -------------------------
+charset-normalizer==3.3.2
+idna==3.6
+sniffio==1.3.1
+
+# -------------------------
+# Additional Dependencies
+# -------------------------
+click>=8.0.0
+colorama>=0.4.4
+h11>=0.14.0

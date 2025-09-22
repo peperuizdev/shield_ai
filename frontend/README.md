@@ -1,70 +1,166 @@
-# Getting Started with Create React App
+# Shield AI - Frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Características
 
-## Available Scripts
+- **Interfaz moderna y responsive** diseñada con React y Tailwind CSS
+- **Tres paneles de visualización** para mostrar el proceso completo de anonimización
+- **Soporte para múltiples tipos de entrada**: texto, archivos PDF/Word/Excel e imágenes
+- **Streaming en tiempo real** de las respuestas del modelo de IA
+- **Manejo robusto de estados** con Context API de React
+- **Gestión de errores** con Error Boundary
+- **Conexión HTTP optimizada** con Axios
+- **Estética corporativa**
 
-In the project directory, you can run:
+## Arquitectura
 
-### `npm start`
+```
+src/
+├── components/           # Componentes React
+│   ├── Common/          # Componentes reutilizables
+│   │   ├── Button.js
+│   │   ├── TextArea.js
+│   │   ├── FileUpload.js
+│   │   ├── StreamingText.js
+│   │   └── ErrorBoundary.js
+│   ├── Layout/          # Componentes de layout
+│   │   ├── Header.js
+│   │   ├── MainContainer.js
+│   │   └── Footer.js
+│   └── Panels/          # Paneles principales
+│       ├── InputPanel.js
+│       └── ProcessingPanels.js
+├── contexts/            # Context para estados globales
+│   └── AppContext.js
+├── services/            # Servicios para API
+│   └── anonymizationService.js
+├── utils/               # Utilidades
+│   └── cn.js
+├── App.js               # Componente principal
+├── App.css              # Estilos globales
+└── index.js             # Punto de entrada
+```
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## 🛠️ Tecnologías Utilizadas
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+- **React 18** - Framework principal
+- **Tailwind CSS 3** - Framework de estilos
+- **Axios** - Cliente HTTP
+- **Lucide React** - Iconos
+- **Context API** - Manejo de estados
+- **Docker** - Contenerización
+- **Nginx** - Servidor web de producción
 
-### `npm test`
+## 📋 Requisitos Previos
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+- Node.js 18 o superior
+- npm o yarn
+- Docker (opcional, para despliegue)
 
-### `npm run build`
+## 🚀 Instalación y Configuración
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+1. **Clonar el repositorio**
+```bash
+git clone <repository-url>
+cd shield-ai-frontend
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+2. **Instalar dependencias**
+```bash
+npm install
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+3. **Configurar variables de entorno**
+```bash
+cp .env.example .env
+```
 
-### `npm run eject`
+Editar `.env` con los valores apropiados:
+```env
+REACT_APP_API_ENDPOINT=http://localhost:8000
+REACT_APP_APP_NAME=Shield AI
+REACT_APP_VERSION=1.0.0
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+4. **Iniciar en modo desarrollo**
+```bash
+npm start
+```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+La aplicación estará disponible en `http://localhost:3000`
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+## 🐳 Despliegue con Docker
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+1. **Construir la imagen**
+```bash
+docker build -t shield-ai-frontend .
+```
 
-## Learn More
+2. **Ejecutar el contenedor**
+```bash
+docker run -p 80:80 shield-ai-frontend
+```
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## 🧪 Comandos Disponibles
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+- `npm start` - Inicia el servidor de desarrollo
+- `npm build` - Construye la aplicación para producción
+- `npm test` - Ejecuta los tests
+- `npm run eject` - Eyecta la configuración de Create React App
 
-### Code Splitting
+## 📱 Funcionalidades Principales
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+### Panel de Entrada
+- **Entrada de texto**: Área para escribir consultas con datos personales
+- **Carga de archivos**: Soporte para PDF, Word y Excel (opcional)
+- **Carga de imágenes**: Procesamiento de imágenes con detección facial y matrículas (opcional)
 
-### Analyzing the Bundle Size
+### Paneles de Procesamiento
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+1. **Panel de Datos Anonimizados**
+   - Muestra el texto con PII reemplazada por datos sintéticos
+   - Opciones para copiar y descargar
 
-### Making a Progressive Web App
+2. **Panel de Respuesta del Modelo**
+   - Visualización en streaming de la respuesta de IA
+   - Indicadores de estado en tiempo real
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+3. **Panel de Respuesta Final**
+   - Texto con datos originales restaurados
+   - Confirmación de proceso completado
 
-### Advanced Configuration
+## 🛡️ Seguridad
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+- Validación de tipos de archivo en cliente
+- Sanitización de entrada de usuario
+- Headers de seguridad en Nginx
+- Manejo seguro de sesiones temporales
 
-### Deployment
+## 🔄 Manejo de Estados
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+La aplicación utiliza un Context Provider centralizado que gestiona:
 
-### `npm run build` fails to minify
+- Estados de carga y error
+- Datos de entrada (texto, archivo, imagen)
+- Respuestas de los tres paneles
+- Control de streaming
+- Información de sesión
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+## 📊 Monitoreo y Logs
+
+**El servicio incluye:**
+
+- Logging de errores en consola
+- Interceptors de Axios para manejo de errores HTTP
+- Health checks para verificar conectividad con backend
+
+## 🤝 Contribución
+
+1. Fork del proyecto
+2. Crear rama feature (`git checkout -b feature/nueva-funcionalidad`)
+3. Commit de cambios (`git commit -m 'Agregar nueva funcionalidad'`)
+4. Push a la rama (`git push origin feature/nueva-funcionalidad`)
+5. Crear Pull Request
+
+## 📄 Licencia
+
+Este proyecto es parte del sistema Shield AI.
