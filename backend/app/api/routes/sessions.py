@@ -12,8 +12,8 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Path, Query, Depends
 from fastapi.responses import JSONResponse
 
-from core.app import app
-from services.session_manager import (
+from app.core.app import app
+from app.services.session_manager import (
     store_anonymization_map,
     get_session_status,
     delete_session,
@@ -22,8 +22,8 @@ from services.session_manager import (
     cleanup_expired_sessions,
     get_session_manager
 )
-from models.requests import SessionCreateRequest, SessionUpdateRequest
-from models.responses import (
+from app.models.requests import SessionCreateRequest, SessionUpdateRequest
+from app.models.responses import (
     SessionStatusResponse,
     SessionCreateResponse,
     SessionDeleteResponse,
