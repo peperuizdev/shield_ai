@@ -22,11 +22,11 @@ logger = logging.getLogger(__name__)
 # Cargar variables de entorno desde la raíz del proyecto
 # =====================================================
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(dotenv_path=os.path.join(ROOT_DIR, ".env.example"))
+load_dotenv(dotenv_path=os.path.join(ROOT_DIR, ".env"))
 
 GROK_API_KEY = os.getenv("GROK_API_KEY")
 if not GROK_API_KEY:
-    logger.warning("No se encontró GROK_API_KEY en .env.example")
+    logger.warning("No se encontró GROK_API_KEY en .env")
 
 # =====================================================
 # Importar el detector de PII

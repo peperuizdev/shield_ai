@@ -2,7 +2,6 @@
   "anonymized": "\n    Hola, soy [PERSON_3] y trabajo en [ORG_1].\n    Mi email es [PERSON_2]an.[PERSON_1]@telefonica.com y mi teléfono es [MISC_2]34 666 123 456.\n    Mi [MISC_1]NI es [PHONE_1]Z y vivo en [LOCATION_1].\n    Por favor, contacta conmigo para discutir el proyecto.\n    ",
   "mapping": {
     "[LOCATION_1]": "Madrid",
-    "[PHONE_1]": "12345678",
     "[MISC_1]": "D",
     "[MISC_2]": "+",
     "[PERSON_1]": "perez",

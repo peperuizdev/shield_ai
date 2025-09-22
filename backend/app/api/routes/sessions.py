@@ -12,8 +12,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Path, Query, Depends
 from fastapi.responses import JSONResponse
 
-from app.core.app import app
-from app.services.session_manager import (
+from services.session_manager import (
     store_anonymization_map,
     get_session_status,
     delete_session,
@@ -22,8 +21,8 @@ from app.services.session_manager import (
     cleanup_expired_sessions,
     get_session_manager
 )
-from app.models.requests import SessionCreateRequest, SessionUpdateRequest
-from app.models.responses import (
+from models.requests import SessionCreateRequest, SessionUpdateRequest
+from models.responses import (
     SessionStatusResponse,
     SessionCreateResponse,
     SessionDeleteResponse,
@@ -479,10 +478,6 @@ async def setup_dummy_session(
             status_code=500,
             detail=f"Internal error creating dummy session: {str(e)}"
         )
-
-
-# Add the router to the main app
-app.include_router(router)
 
 
 # Export router for testing

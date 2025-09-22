@@ -13,10 +13,10 @@ from datetime import datetime
 from fastapi import APIRouter, Query, Depends
 from fastapi.responses import JSONResponse
 
-from app.core.app import app, get_app_health
-from app.core.redis_client import get_redis_health, get_redis_stats, is_redis_connected
-from app.models.requests import HealthCheckRequest
-from app.models.responses import HealthCheckResponse, SystemStatsResponse
+from core.app import app, get_app_health
+from core.redis_client import get_redis_health, get_redis_stats, is_redis_connected
+from models.requests import HealthCheckRequest
+from models.responses import HealthCheckResponse, SystemStatsResponse
 
 
 logger = logging.getLogger(__name__)
@@ -212,7 +212,7 @@ async def get_system_stats():
         redis_stats = get_redis_stats()
         
         # Get session statistics (would be implemented in session manager)
-        from app.services.session_manager import list_active_sessions, cleanup_expired_sessions
+        from services.session_manager import list_active_sessions, cleanup_expired_sessions
         
         active_sessions = list_active_sessions()
         cleanup_info = cleanup_expired_sessions()
@@ -331,10 +331,6 @@ async def liveness_probe():
                 "timestamp": datetime.now().isoformat()
             }
         )
-
-
-# Add the router to the main app
-app.include_router(router)
 
 
 # Export router for testing
