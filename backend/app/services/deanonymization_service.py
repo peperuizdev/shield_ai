@@ -1,348 +1,431 @@
 """
 Shield AI - Deanonymization Service
 
-Service layer containing all deanonymization business logic.
-Separated from HTTP layer for better organization and testability.
+Business logic for deanonymization operations.
+Contains all core functions for text deanonymization, streaming, and testing.
 """
 
 import asyncio
+import json
 import logging
-from typing import AsyncGenerator, List, Tuple, Dict
+import time
+from typing import Dict, List, Any, AsyncGenerator
+from .session_manager import get_anonymization_map, store_anonymization_map
 
 logger = logging.getLogger(__name__)
 
-
-# === DUMMY FUNCTIONS FOR LLM SIMULATION ===
+# =====================================================
+# DUMMY DATA FUNCTIONS (FOR TESTING)
+# =====================================================
 
 def dummy_anonymization_map() -> Dict[str, str]:
     """
-    Function that simulates a typical anonymization map
-    that would have been generated in the previous anonymization process.
+    Create a dummy anonymization map for testing purposes.
+    
+    Returns:
+        Dict mapping original data to fake data for testing
     """
     return {
-        # Full names
         "Juan Pérez": "María González",
-        # Emails
-        "juan.perez@email.com": "maria.gonzalez@email.com", 
-        # Phones
-        "612345678": "687654321",
-        # DNIs
+        "juan.perez@email.com": "maria.gonzalez@email.com",
+        "Madrid": "Barcelona", 
+        "+34 612 345 678": "+34 687 654 321",
+        "Calle Mayor 123": "Avenida Diagonal 456",
         "12345678A": "87654321B",
-        # Addresses - keep base address same to avoid issues
-        "Calle Mayor 123": "Avenida Libertad 456",
-        # Cities
-        "Madrid": "Barcelona",
-        # Postal codes
-        "28001": "08001",
-        # Banks
         "Banco Santander": "Banco BBVA",
-        # IBANs
-        "ES91 2100 0418 4502 0005 1332": "ES76 0182 6473 8901 2345 6789"
+        "ES91 2100 0418 4502 0005 1332": "ES76 0182 6473 8901 2345 6789",
+        "Empresa ABC S.L.": "Corporación XYZ S.A."
     }
-
 
 async def dummy_llm_response_stream(prompt: str) -> AsyncGenerator[str, None]:
     """
-    Dummy function that simulates LLM streaming response
-    with anonymized data.
+    Simulate an LLM response stream for testing.
+    
+    Args:
+        prompt: The prompt sent to the LLM (for realism)
+        
+    Yields:
+        str: Words from a simulated LLM response
     """
-    response_text = """Hola María González, gracias por contactar con nosotros desde Barcelona. 
-    Hemos recibido tu consulta sobre los servicios bancarios del Banco BBVA. 
-    Confirmo que hemos registrado tu información:
-    - Email: maria.gonzalez@email.com
-    - Teléfono: 687654321
-    - DNI: 87654321B
-    - Dirección: Avenida Libertad 456, Barcelona, 08001
-    - IBAN: ES76 0182 6473 8901 2345 6789
+    # Simulated LLM response with fake data
+    response_words = [
+        "Hola", "María", "González,", "gracias", "por", "contactar", "con", "nosotros.",
+        "Hemos", "recibido", "tu", "consulta", "desde", "Barcelona", "y", "la", "estamos",
+        "procesando.", "Tu", "email", "maria.gonzalez@email.com", "ha", "sido", "registrado.",
+        "El", "teléfono", "+34", "687", "654", "321", "será", "contactado", "pronto.",
+        "Banco", "BBVA", "procesará", "la", "transacción", "desde", "la", "cuenta",
+        "ES76", "0182", "6473", "8901", "2345", "6789.", "La", "dirección", "Avenida",
+        "Diagonal", "456", "está", "confirmada.", "Corporación", "XYZ", "S.A.", "se",
+        "pondrá", "en", "contacto", "contigo.", "Saludos", "cordiales."
+    ]
     
-    Procederemos con tu solicitud en las próximas 24 horas."""
-    
-    words = response_text.split()
-    for word in words:
-        await asyncio.sleep(0.3)  # Simulate streaming delay (increased for better readability)
-        yield word + " "
+    for word in response_words:
+        await asyncio.sleep(0.3)  # Slower streaming for better UX
+        yield word
 
-
-# === CORE DEANONYMIZATION FUNCTIONS ===
+# =====================================================
+# CORE DEANONYMIZATION FUNCTIONS
+# =====================================================
 
 def create_reverse_map(anonymization_map: Dict[str, str]) -> Dict[str, str]:
     """
-    Create reverse map for deanonymization
-    (fake_data -> original_data)
+    Create reverse mapping for deanonymization.
     
     Args:
-        anonymization_map: Dictionary mapping original_data -> fake_data
+        anonymization_map: Dictionary mapping pseudonym -> original data (from PII pipeline)
         
     Returns:
-        Dictionary mapping fake_data -> original_data
+        Dictionary mapping pseudonym -> original data (same as input, no inversion needed)
     """
-    return {fake_data: original_data for original_data, fake_data in anonymization_map.items()}
-
+    # El mapping del pipeline PII ya viene como pseudonym -> original
+    # No necesitamos invertirlo
+    return anonymization_map
 
 def deanonymize_text(text: str, reverse_map: Dict[str, str]) -> str:
     """
-    Replace anonymized data with original data in text.
-    Maintains exact structure (spaces, punctuation, etc.)
+    Replace fake data with original data in text.
     
     Args:
-        text: Text containing anonymized data
-        reverse_map: Dictionary mapping fake_data -> original_data
+        text: Text containing fake data
+        reverse_map: Dictionary mapping fake -> original data
         
     Returns:
         Text with original data restored
     """
     result = text
-    
-    # Sort by length descending to avoid partial replacements
+    # Sort by length (descending) to avoid partial replacements
     sorted_items = sorted(reverse_map.items(), key=lambda x: len(x[0]), reverse=True)
     
     for fake_data, original_data in sorted_items:
-        # Exact replacement maintaining structure
         result = result.replace(fake_data, original_data)
     
     return result
 
-
-async def deanonymize_streaming_text(
-    text_chunk: str, 
-    reverse_map: Dict[str, str], 
-    buffer: List[str]
-) -> Tuple[str, List[str]]:
+async def deanonymize_streaming_text(text_stream: AsyncGenerator[str, None], 
+                                   reverse_map: Dict[str, str]) -> AsyncGenerator[str, None]:
     """
-    Deanonymize text in streaming, handling words that may be split
-    across chunks.
+    Deanonymize text as it streams in.
     
     Args:
-        text_chunk: Current chunk of text
-        reverse_map: Dictionary mapping fake_data -> original_data
-        buffer: Buffer of accumulated chunks
+        text_stream: Async generator of text chunks
+        reverse_map: Dictionary mapping fake -> original data
         
-    Returns:
-        Tuple of (deanonymized_chunk, updated_buffer)
+    Yields:
+        str: Deanonymized text chunks
     """
-    # Add current chunk to buffer
-    buffer.append(text_chunk)
+    buffer = ""
     
-    # Join buffer for processing
-    full_text = ''.join(buffer)
-    
-    # Try to deanonymize full buffer text
-    deanonymized = deanonymize_text(full_text, reverse_map)
-    
-    # If there are changes, means we found something to replace
-    if deanonymized != full_text:
-        # Clear buffer and return deanonymized text
-        return deanonymized, []
-    else:
-        # If buffer is too long and no matches, release part of buffer
-        if len(buffer) > 10:  # Keep only last elements
-            result = ''.join(buffer[:-5])  # Return part of buffer
-            return result, buffer[-5:]  # Keep last 5 chunks
+    async for chunk in text_stream:
+        buffer += chunk
         
-        # No matches yet, maintain buffer
-        return "", buffer
+        # Check for complete replacements in buffer
+        for fake_data, original_data in reverse_map.items():
+            if fake_data in buffer:
+                buffer = buffer.replace(fake_data, original_data)
+        
+        # Yield processed chunks (word by word for smoother streaming)
+        words = buffer.split()
+        if len(words) > 1:
+            # Yield all complete words except the last (might be incomplete)
+            for word in words[:-1]:
+                yield word + " "
+            buffer = words[-1]  # Keep last word in buffer
+        
+        await asyncio.sleep(0.1)  # Slower streaming for better UX
+    
+    # Yield remaining buffer
+    if buffer:
+        yield buffer
 
-
-# === HIGH-LEVEL SERVICE FUNCTIONS ===
-
-def process_deanonymization(session_id: str, model_response: str, anonymization_map: Dict[str, str]) -> Dict:
+def process_deanonymization(text: str, session_id: str) -> Dict[str, Any]:
     """
-    Process complete deanonymization for a given text and session.
+    Complete deanonymization process using session data from Redis.
     
     Args:
-        session_id: Session identifier
-        model_response: Text to deanonymize
-        anonymization_map: Original anonymization mapping
+        text: Text to deanonymize
+        session_id: Session ID for retrieving anonymization map
         
     Returns:
         Dictionary with deanonymization results
     """
     try:
-        logger.info(f"Processing deanonymization for session: {session_id}")
+        # Get anonymization map from Redis
+        anonymization_map = get_anonymization_map(session_id)
         
-        # Create reverse map
+        if not anonymization_map:
+            return {
+                "success": False,
+                "error": f"No anonymization map found for session {session_id}",
+                "original_text": text,
+                "deanonymized_text": text
+            }
+        
+        # Create reverse map and deanonymize
         reverse_map = create_reverse_map(anonymization_map)
+        deanonymized = deanonymize_text(text, reverse_map)
         
-        # Deanonymize text
-        deanonymized_text = deanonymize_text(model_response, reverse_map)
-        
-        # Count replacements made
-        replacements_made = len([k for k, v in reverse_map.items() if k in model_response])
-        
-        result = {
+        return {
+            "success": True,
+            "original_text": text,
+            "deanonymized_text": deanonymized,
             "session_id": session_id,
-            "original_response": model_response,
-            "deanonymized_response": deanonymized_text,
-            "replacements_made": replacements_made
+            "replacements_made": len([k for k in reverse_map.keys() if k in text])
         }
         
-        logger.info(f"Deanonymization completed for session {session_id}, {replacements_made} replacements made")
-        return result
-        
     except Exception as e:
-        logger.error(f"Error in deanonymization for session {session_id}: {str(e)}")
-        raise
+        return {
+            "success": False,
+            "error": str(e),
+            "original_text": text,
+            "deanonymized_text": text
+        }
 
+# =====================================================
+# STREAMING FUNCTIONS
+# =====================================================
 
-async def generate_dual_stream(session_id: str, anonymization_map: Dict[str, str]) -> AsyncGenerator[str, None]:
+async def generate_dual_stream(session_id: str) -> AsyncGenerator[str, None]:
     """
-    Generate dual stream (anonymous + deanonymized) for a session.
+    Generate Server-Sent Events stream showing both anonymous and deanonymized text.
     
     Args:
-        session_id: Session identifier
-        anonymization_map: Original anonymization mapping
+        session_id: Session ID for retrieving anonymization map
         
     Yields:
-        JSON-formatted SSE messages
+        str: SSE formatted data
     """
-    import json
-    
     try:
-        logger.info(f"Starting dual stream for session: {session_id}")
+        # Get anonymization map from Redis
+        anonymization_map = get_anonymization_map(session_id)
         
-        # Create reverse map
+        if not anonymization_map:
+            yield f"data: {json.dumps({'error': f'No map found for session {session_id}'})}\n\n"
+            return
+        
+        # Create reverse map for deanonymization
         reverse_map = create_reverse_map(anonymization_map)
         
-        logger.debug("Generating LLM response chunks...")
+        # Simulate LLM response stream
+        llm_stream = dummy_llm_response_stream("Process user query with anonymized data")
         
-        # First, collect full anonymized response
-        anonymous_chunks = []
-        async for chunk in dummy_llm_response_stream("dummy prompt"):
-            anonymous_chunks.append(chunk)
-        
-        logger.debug(f"Collected {len(anonymous_chunks)} chunks from LLM")
-        
-        # Rebuild complete anonymized text
-        full_anonymous_text = ''.join(anonymous_chunks)
-        
-        # Deanonymize complete text preserving structure
-        full_deanonymized_text = deanonymize_text(full_anonymous_text, reverse_map)
-        
-        logger.debug(f"Anonymous text length: {len(full_anonymous_text)}, Deanonymized text length: {len(full_deanonymized_text)}")
-        
-        # Now send both texts chunk by chunk synchronized
-        anonymous_pos = 0
-        deanonymized_pos = 0
-        chunk_size = 2  # Send 2 characters at a time for more gradual effect
-        
-        chunks_sent = 0
-        while anonymous_pos < len(full_anonymous_text) or deanonymized_pos < len(full_deanonymized_text):
-            # Send anonymized chunk
-            if anonymous_pos < len(full_anonymous_text):
-                anon_end = min(anonymous_pos + chunk_size, len(full_anonymous_text))
-                anon_chunk = full_anonymous_text[anonymous_pos:anon_end]
-                # Use json.dumps to properly escape the chunk
-                yield f"data: {json.dumps({'type': 'anonymous', 'chunk': anon_chunk})}\n\n"
-                anonymous_pos = anon_end
+        async for word in llm_stream:
+            # Send anonymous chunk (as received from LLM)
+            anonymous_data = {
+                "type": "anonymous",
+                "chunk": word,
+                "session_id": session_id
+            }
+            yield f"data: {json.dumps(anonymous_data)}\n\n"
             
-            # Send corresponding deanonymized chunk
-            if deanonymized_pos < len(full_deanonymized_text):
-                deanon_end = min(deanonymized_pos + chunk_size, len(full_deanonymized_text))
-                deanon_chunk = full_deanonymized_text[deanonymized_pos:deanon_end]
-                # Use json.dumps to properly escape the chunk
-                yield f"data: {json.dumps({'type': 'deanonymized', 'chunk': deanon_chunk})}\n\n"
-                deanonymized_pos = deanon_end
+            # Deanonymize the chunk
+            deanonymized_chunk = deanonymize_text(word, reverse_map)
             
-            chunks_sent += 1
-            
-            # Increased pause for more comfortable reading speed
-            await asyncio.sleep(0.1)
-        
-        logger.info(f"Completed dual stream for session {session_id}, sent {chunks_sent} chunk pairs")
-        yield f"data: {json.dumps({'type': 'status', 'status': 'complete'})}\n\n"
-        
-    except Exception as stream_error:
-        logger.error(f"Error in stream generation: {str(stream_error)}")
-        yield f"data: {json.dumps({'type': 'error', 'message': str(stream_error)})}\n\n"
+            # Send deanonymized chunk
+            deanonymized_data = {
+                "type": "deanonymized", 
+                "chunk": deanonymized_chunk,
+                "session_id": session_id
+            }
+            yield f"data: {json.dumps(deanonymized_data)}\n\n"
+    
+    except Exception as e:
+        error_data = {"error": str(e), "session_id": session_id}
+        yield f"data: {json.dumps(error_data)}\n\n"
 
-
-async def generate_deanonymized_stream(session_id: str, anonymization_map: Dict[str, str]) -> AsyncGenerator[str, None]:
+async def generate_deanonymized_stream(session_id: str) -> AsyncGenerator[str, None]:
     """
-    Generate deanonymized-only stream for a session.
+    Generate Server-Sent Events stream with only deanonymized text.
     
     Args:
-        session_id: Session identifier
-        anonymization_map: Original anonymization mapping
+        session_id: Session ID for retrieving anonymization map
         
     Yields:
-        JSON-formatted SSE messages
+        str: SSE formatted data with deanonymized content
     """
-    import json
-    
     try:
-        logger.info(f"Starting deanonymized stream for session: {session_id}")
+        # Get anonymization map from Redis
+        anonymization_map = get_anonymization_map(session_id)
         
-        # Create reverse map
+        if not anonymization_map:
+            yield f"data: {json.dumps({'error': f'No map found for session {session_id}'})}\n\n"
+            return
+        
+        # Create reverse map for deanonymization
         reverse_map = create_reverse_map(anonymization_map)
         
-        buffer = []
+        # Simulate LLM response stream
+        llm_stream = dummy_llm_response_stream("Process user query")
         
-        # Simulate receiving streaming LLM response
-        async for chunk in dummy_llm_response_stream("dummy prompt"):
-            # Process chunk with deanonymization
-            deanonymized_chunk, buffer = await deanonymize_streaming_text(
-                chunk, reverse_map, buffer
-            )
-            
-            if deanonymized_chunk:
-                yield f"data: {json.dumps({'chunk': deanonymized_chunk})}\n\n"
+        # Deanonymize streaming text
+        deanonymized_stream = deanonymize_streaming_text(llm_stream, reverse_map)
         
-        # Process any remaining content in buffer
-        if buffer:
-            final_text = ''.join(buffer)
-            final_deanonymized = deanonymize_text(final_text, reverse_map)
-            yield f"data: {json.dumps({'chunk': final_deanonymized})}\n\n"
-        
-        yield f"data: {json.dumps({'status': 'complete'})}\n\n"
-        
-        logger.info(f"Completed deanonymized stream for session {session_id}")
-        
+        async for chunk in deanonymized_stream:
+            data = {
+                "type": "deanonymized",
+                "chunk": chunk,
+                "session_id": session_id
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+    
     except Exception as e:
-        logger.error(f"Error in deanonymized stream for session {session_id}: {str(e)}")
-        yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        error_data = {"error": str(e), "session_id": session_id}
+        yield f"data: {json.dumps(error_data)}\n\n"
 
+# =====================================================
+# GET STREAMING FUNCTIONS (for backwards compatibility)
+# =====================================================
 
-def test_full_process(session_id: str) -> Dict:
+async def generate_dual_stream_get(session_id: str) -> AsyncGenerator[str, None]:
     """
-    Execute complete test process for deanonymization.
+    GET version of dual stream for backward compatibility.
+    """
+    async for chunk in generate_dual_stream(session_id):
+        yield chunk
+
+async def generate_deanonymized_stream_get(session_id: str) -> AsyncGenerator[str, None]:
+    """
+    GET version of deanonymized stream for backward compatibility.
+    """
+    async for chunk in generate_deanonymized_stream(session_id):
+        yield chunk
+
+# =====================================================
+# TESTING FUNCTIONS
+# =====================================================
+
+def test_full_process(session_id: str) -> Dict[str, Any]:
+    """
+    Test complete deanonymization process with dummy data.
     
     Args:
-        session_id: Session identifier for testing
+        session_id: Session ID to use for testing
         
     Returns:
-        Dictionary with complete test results
+        Dictionary with test results
     """
-    from services.session_manager import store_anonymization_map, get_anonymization_map
-    
     try:
-        logger.info(f"Starting full test process for session: {session_id}")
-        
-        # 1. Setup dummy session
+        # Setup dummy session
         dummy_map = dummy_anonymization_map()
         store_anonymization_map(session_id, dummy_map)
         
-        # 2. Simulate model response with anonymized data
-        anonymized_response = """Estimado usuario María González de Barcelona, 
-        hemos procesado su solicitud. Sus datos registrados son:
-        Email: maria.gonzalez@email.com
-        Teléfono: 687654321
-        Puede contactarnos en Avenida Libertad 456."""
+        # Test text with fake data (as if coming from LLM)
+        test_text = ("Hola María González, hemos procesado tu solicitud desde Barcelona. "
+                    "Tu email maria.gonzalez@email.com ha sido registrado correctamente. "
+                    "El Banco BBVA procesará la transferencia.")
         
-        # 3. Deanonymize
-        anonymization_map = get_anonymization_map(session_id)
-        reverse_map = create_reverse_map(anonymization_map)
-        deanonymized_response = deanonymize_text(anonymized_response, reverse_map)
+        # Process deanonymization
+        result = process_deanonymization(test_text, session_id)
         
-        result = {
-            "session_id": session_id,
-            "step_1_anonymization_map": anonymization_map,
-            "step_2_anonymized_response": anonymized_response,
-            "step_3_deanonymized_response": deanonymized_response
-        }
+        # Add test metadata
+        result.update({
+            "test_session": True,
+            "dummy_map_used": dummy_map,
+            "test_text_input": test_text
+        })
         
-        logger.info(f"Full test process completed for session {session_id}")
         return result
         
     except Exception as e:
-        logger.error(f"Error in full test process for session {session_id}: {str(e)}")
-        raise
+        return {
+            "success": False,
+            "error": f"Test failed: {str(e)}",
+            "test_session": True
+        }
+
+# =====================================================
+# CHAT STREAMING FUNCTIONS
+# =====================================================
+
+async def generate_chat_dual_stream(session_id: str, llm_response: str, mapping: Dict[str, str]) -> AsyncGenerator[str, None]:
+    """
+    Generate dual stream from real chat data instead of dummy data.
+    
+    Args:
+        session_id: Session ID for tracking
+        llm_response: Real LLM response (with fake data)
+        mapping: Anonymization mapping (original -> fake)
+        
+    Yields:
+        str: SSE formatted data with both anonymous and deanonymized chunks
+    """
+    try:
+        import asyncio
+        
+        # Create reverse map for deanonymization
+        reverse_map = create_reverse_map(mapping)
+        
+        # Deanonymize the COMPLETE response to get the real data version
+        deanonymized_response = deanonymize_text(llm_response, reverse_map)
+        
+        logger.info(f"LLM Response (falso): {llm_response[:100]}...")
+        logger.info(f"Deanonymized (real): {deanonymized_response[:100]}...")
+        
+        # Send initial metadata
+        metadata = {
+            "type": "metadata",
+            "session_id": session_id,
+            "pii_detected": bool(mapping),
+            "entity_count": len(mapping),
+            "streaming": True
+        }
+        yield f"data: {json.dumps(metadata)}\n\n"
+        
+        # Split BOTH responses into words for streaming simulation
+        anonymous_words = llm_response.split()
+        deanonymized_words = deanonymized_response.split()
+        
+        # Stream both responses word by word in parallel
+        max_words = max(len(anonymous_words), len(deanonymized_words))
+        
+        for i in range(max_words):
+            # Get anonymous word (with fake data)
+            anonymous_chunk = ""
+            if i < len(anonymous_words):
+                anonymous_chunk = f" {anonymous_words[i]}" if i > 0 else anonymous_words[i]
+            
+            # Get deanonymized word (with real data)  
+            deanonymized_chunk = ""
+            if i < len(deanonymized_words):
+                deanonymized_chunk = f" {deanonymized_words[i]}" if i > 0 else deanonymized_words[i]
+            
+            # Send anonymous chunk (what LLM generated - with fake data)
+            if anonymous_chunk:
+                anonymous_data = {
+                    "type": "anonymous",
+                    "chunk": anonymous_chunk,
+                    "session_id": session_id,
+                    "word_index": i
+                }
+                yield f"data: {json.dumps(anonymous_data)}\n\n"
+            
+            # Send deanonymized chunk (what user sees - with real data)
+            if deanonymized_chunk:
+                deanonymized_data = {
+                    "type": "deanonymized",
+                    "chunk": deanonymized_chunk,
+                    "session_id": session_id,
+                    "word_index": i
+                }
+                yield f"data: {json.dumps(deanonymized_data)}\n\n"
+            
+            # Small delay to simulate real streaming
+            await asyncio.sleep(0.1)
+        
+        # Send completion signal
+        completion_data = {
+            "type": "complete",
+            "session_id": session_id,
+            "total_words": max_words,
+            "entities_replaced": len(reverse_map),
+            "anonymous_text": llm_response,
+            "deanonymized_text": deanonymized_response
+        }
+        yield f"data: {json.dumps(completion_data)}\n\n"
+        
+    except Exception as e:
+        error_data = {
+            "type": "error",
+            "error": str(e),
+            "session_id": session_id
+        }
+        yield f"data: {json.dumps(error_data)}\n\n"

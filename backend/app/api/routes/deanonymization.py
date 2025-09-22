@@ -8,6 +8,7 @@ Delegates business logic to service layer.
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from typing import Optional
 
 # Import service layer functions
 from services.deanonymization_service import (
@@ -15,136 +16,140 @@ from services.deanonymization_service import (
     process_deanonymization,
     generate_dual_stream,
     generate_deanonymized_stream,
+    generate_dual_stream_get,
+    generate_deanonymized_stream_get,
     test_full_process
 )
-from services.session_manager import get_anonymization_map, store_anonymization_map
-from models.requests import DeAnonymizationRequest
 
-# Create router instance
-router = APIRouter(prefix="/deanonymize", tags=["deanonymization"])
+from services.session_manager import store_anonymization_map
 
+router = APIRouter(prefix="/deanonymize", tags=["Deanonymization"])
 
-# === REQUEST MODELS ===
-
-class StreamingDeAnonymizationRequest(BaseModel):
-    """Request model for streaming deanonymization."""
+class DeAnonymizationRequest(BaseModel):
+    text: str
     session_id: str
 
+class StreamingDeAnonymizationRequest(BaseModel):
+    session_id: str
 
-# === ENDPOINTS ===
+# =====================================================
+# MAIN DEANONYMIZATION ENDPOINT
+# =====================================================
 
-@router.post("/", response_model=dict)
+@router.post("/")
 async def deanonymize_text_endpoint(request: DeAnonymizationRequest):
     """
-    Deanonymize text using session's anonymization map.
+    Deanonymize text using session data.
     
-    HTTP layer - delegates business logic to service.
+    HTTP layer - delegates processing to service.
     """
     try:
-        # Get session's anonymization map
-        anonymization_map = get_anonymization_map(request.session_id)
-        if not anonymization_map:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Anonymization map not found for session: {request.session_id}"
-            )
+        result = process_deanonymization(request.text, request.session_id)
         
-        # Delegate to service layer
-        result = process_deanonymization(
-            request.session_id,
-            request.model_response,
-            anonymization_map
-        )
+        if not result["success"]:
+            raise HTTPException(status_code=404, detail=result["error"])
         
         return result
         
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error processing deanonymization: {str(e)}")
 
+# =====================================================
+# STREAMING ENDPOINTS (POST)
+# =====================================================
 
 @router.post("/stream-dual")
-async def stream_dual_response(request: StreamingDeAnonymizationRequest):
+async def stream_dual_deanonymization(request: StreamingDeAnonymizationRequest):
     """
-    Stream dual anonymous and deanonymized text side by side.
+    Stream dual response (anonymous + deanonymized) for a session.
     
-    HTTP layer - delegates streaming logic to service.
+    Returns real-time stream with both anonymous and deanonymized content.
     """
     try:
-        # Get session's anonymization map
-        anonymization_map = get_anonymization_map(request.session_id)
-        if not anonymization_map:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Anonymization map not found for session: {request.session_id}"
-            )
-        
-        # Delegate streaming to service layer
         return StreamingResponse(
-            generate_dual_stream(request.session_id, anonymization_map),
-            media_type="text/plain",
+            generate_dual_stream(request.session_id),
+            media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "Content-Type": "text/event-stream"
             }
         )
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error setting up dual stream: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"Error in dual streaming: {str(e)}")
 
 @router.post("/stream")
-async def stream_deanonymized_response(request: StreamingDeAnonymizationRequest):
+async def stream_deanonymization(request: StreamingDeAnonymizationRequest):
     """
-    Stream deanonymized text only.
+    Stream deanonymized response for a session.
     
-    HTTP layer - delegates streaming logic to service.
+    Returns real-time stream with deanonymized content only.
     """
     try:
-        # Get session's anonymization map
-        anonymization_map = get_anonymization_map(request.session_id)
-        if not anonymization_map:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Anonymization map not found for session: {request.session_id}"
-            )
-        
-        # Delegate streaming to service layer
         return StreamingResponse(
-            generate_deanonymized_stream(request.session_id, anonymization_map),
-            media_type="text/plain",
+            generate_deanonymized_stream(request.session_id),
+            media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "Content-Type": "text/event-stream"
             }
         )
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error setting up deanonymized stream: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error in deanonymization streaming: {str(e)}")
 
+# =====================================================
+# STREAMING ENDPOINTS (GET - for backwards compatibility)
+# =====================================================
+
+@router.get("/dual-stream/{session_id}")
+async def dual_stream_get(session_id: str):
+    """
+    GET version of dual stream for backward compatibility.
+    """
+    try:
+        return StreamingResponse(
+            generate_dual_stream_get(session_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error in dual streaming: {str(e)}")
+
+@router.get("/deanonymize-stream/{session_id}")
+async def deanonymize_stream_get(session_id: str):
+    """
+    GET version of deanonymization stream for backward compatibility.
+    """
+    try:
+        return StreamingResponse(
+            generate_deanonymized_stream_get(session_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error in deanonymization streaming: {str(e)}")
+
+# =====================================================
+# TESTING ENDPOINTS
+# =====================================================
 
 @router.get("/test/{session_id}")
 async def test_deanonymization_process(session_id: str):
     """
-    Test complete deanonymization process.
-    
-    HTTP layer - delegates test logic to service.
+    Test complete deanonymization process with dummy data.
     """
     try:
-        # Delegate test process to service layer
         result = test_full_process(session_id)
         return result
-        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Test failed: {str(e)}")
-
+        raise HTTPException(status_code=500, detail=f"Error in test process: {str(e)}")
 
 @router.post("/setup-dummy/{session_id}")
 async def setup_dummy_session(session_id: str):

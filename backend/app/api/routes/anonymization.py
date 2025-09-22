@@ -15,7 +15,7 @@ class AnonymizeRequest(BaseModel):
 def anonymize(req: AnonymizeRequest):
     try:
         # Local import to avoid startup time for heavy deps
-        from backend.app.services.pii_detector import run_pipeline
+        from services.pii_detector import run_pipeline
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"PII service not available: {exc}")
 
@@ -24,7 +24,7 @@ def anonymize(req: AnonymizeRequest):
     # Guardar mapeo en Redis si se proporciona session_id
     if req.session_id and out.get('mapping'):
         try:
-            from backend.app.services.session_manager import store_anonymization_map
+            from services.session_manager import store_anonymization_map
             store_anonymization_map(req.session_id, out['mapping'])
         except Exception as e:
             # No fallar si Redis falla, pero loggear el error

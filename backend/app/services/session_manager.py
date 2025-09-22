@@ -427,6 +427,59 @@ def cleanup_expired_sessions() -> Dict[str, Any]:
 
 
 # Export main functions
+def store_llm_response(session_id: str, llm_response: str, ttl_seconds: int = None) -> bool:
+    """
+    Store LLM response for a session (for streaming purposes).
+    
+    Args:
+        session_id (str): Session identifier
+        llm_response (str): LLM response text
+        ttl_seconds (int, optional): TTL in seconds
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    manager = get_session_manager()
+    try:
+        # Store LLM response in a separate key
+        llm_key = f"{manager.key_prefix}:llm:{session_id}"
+        
+        # Use provided TTL or default
+        ttl = ttl_seconds or manager.default_ttl
+        
+        # Store the LLM response
+        manager.redis_client.setex(llm_key, ttl, llm_response)
+        
+        logger.info(f"LLM response stored for session {session_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error storing LLM response for session {session_id}: {e}")
+        return False
+
+def get_llm_response(session_id: str) -> Optional[str]:
+    """
+    Retrieve LLM response for a session.
+    
+    Args:
+        session_id (str): Session identifier
+        
+    Returns:
+        Optional[str]: LLM response text or None if not found
+    """
+    manager = get_session_manager()
+    try:
+        llm_key = f"{manager.key_prefix}:llm:{session_id}"
+        llm_response = manager.redis_client.get(llm_key)
+        
+        if llm_response:
+            return llm_response.decode('utf-8')
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error retrieving LLM response for session {session_id}: {e}")
+        return None
+
 __all__ = [
     "SessionManager",
     "get_session_manager",
@@ -436,5 +489,7 @@ __all__ = [
     "delete_session",
     "extend_session_ttl",
     "list_active_sessions",
-    "cleanup_expired_sessions"
+    "cleanup_expired_sessions",
+    "store_llm_response",
+    "get_llm_response"
 ]
