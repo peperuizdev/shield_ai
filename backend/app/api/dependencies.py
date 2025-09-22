@@ -10,9 +10,9 @@ from typing import Optional, Dict, Any
 from fastapi import Depends, HTTPException, Request, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from core.config import settings
-from core.redis_client import get_redis_client, is_redis_connected
-from services.session_manager import get_session_manager, SessionManager
+from app.core.config import settings
+from app.core.redis_client import get_redis_client, is_redis_connected
+from app.services.session_manager import get_session_manager, SessionManager
 
 
 logger = logging.getLogger(__name__)

@@ -333,9 +333,5 @@ async def liveness_probe():
         )
 
 
-# Add the router to the main app
-app.include_router(router)
-
-
 # Export router for testing
 __all__ = ["router"]
