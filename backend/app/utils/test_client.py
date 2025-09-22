@@ -34,10 +34,11 @@ class ShieldAITestClient:
         """
         Prueba la desanonimización en streaming
         """
-        url = f"{self.base_url}/deanonymize/stream/{session_id}"
+        url = f"{self.base_url}/deanonymize/stream"
+        payload = {"session_id": session_id}
         
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
+            async with session.post(url, json=payload) as response:
                 print("=== RESPUESTA STREAMING ===")
                 async for line in response.content:
                     if line:
@@ -53,13 +54,14 @@ class ShieldAITestClient:
         """
         Prueba el streaming dual (anonimizado y desanonimizado simultáneo)
         """
-        url = f"{self.base_url}/deanonymize/dual-stream/{session_id}"
+        url = f"{self.base_url}/deanonymize/stream-dual"
+        payload = {"session_id": session_id}
         
         anonymous_text = ""
         deanonymized_text = ""
         
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
+            async with session.post(url, json=payload) as response:
                 print("=== STREAMING DUAL ===")
                 print("📊 Monitoreando streams...")
                 
@@ -91,7 +93,7 @@ class ShieldAITestClient:
         """
         Prueba el proceso completo de desanonimización
         """
-        response = requests.get(f"{self.base_url}/deanonymize/test-full-process/{session_id}")
+        response = requests.get(f"{self.base_url}/deanonymize/test/{session_id}")
         return response.json()
     
     def get_session_status(self, session_id: str) -> Dict:
@@ -170,7 +172,7 @@ async def main():
     
     # 6. Probar proceso completo
     print("\n\n6. Probando proceso completo...")
-    full_test = client.test_full_process(session_id + "_full")
+    full_test = client.test_full_process(session_id)
     print("\n📋 MAPA DE ANONIMIZACIÓN:")
     for orig, fake in full_test['step_1_anonymization_map'].items():
         print(f"   {orig} → {fake}")
