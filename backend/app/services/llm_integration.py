@@ -21,10 +21,12 @@ logger = logging.getLogger(__name__)
 # =====================================================
 # Cargar variables de entorno desde la raíz del proyecto
 # =====================================================
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(dotenv_path=os.path.join(ROOT_DIR, ".env"))
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(HERE)))  # services -> app -> backend -> raíz
+env_path = os.path.join(ROOT_DIR, ".env")
+load_dotenv(dotenv_path=env_path)
 
-GROK_API_KEY = os.getenv("GROK_API_KEY")
+GROK_API_KEY = os.getenv("GROK_API_KEY") or os.getenv("SHIELD_AI_GROK_API_KEY")
 if not GROK_API_KEY:
     logger.warning("No se encontró GROK_API_KEY en .env")
 
@@ -133,7 +135,7 @@ class TLSAdapter(HTTPAdapter):
 # =====================================================
 class LLMClient:
     def __init__(self):
-        self.endpoint = "https://api.grok.ai/v1/generate"
+        self.endpoint = "https://api.groq.com/openai/v1/chat/completions"
         self.api_key = GROK_API_KEY
         self.model = "grok-3.1"
         self.max_retries = 3
@@ -146,9 +148,9 @@ class LLMClient:
             "Content-Type": "application/json"
         }
         payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "max_output_tokens": 500
+            "model": "mixtral-8x7b-32768",
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 500
         }
 
         for attempt in range(self.max_retries):

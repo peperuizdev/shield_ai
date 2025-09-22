@@ -9,6 +9,7 @@ class AnonymizeRequest(BaseModel):
     model: Optional[str] = 'es'
     use_regex: Optional[bool] = False
     pseudonymize: Optional[bool] = False
+    session_id: Optional[str] = None  # Guardar mapeo en Redis si se proporciona session_id
 
 @router.post('/anonymize')
 def anonymize(req: AnonymizeRequest):
@@ -19,4 +20,14 @@ def anonymize(req: AnonymizeRequest):
         raise HTTPException(status_code=500, detail=f"PII service not available: {exc}")
 
     out = run_pipeline(req.model, req.text, use_regex=req.use_regex, pseudonymize=req.pseudonymize, save_mapping=False)
+    
+    # Guardar mapeo en Redis si se proporciona session_id
+    if req.session_id and out.get('mapping'):
+        try:
+            from backend.app.services.session_manager import store_anonymization_map
+            store_anonymization_map(req.session_id, out['mapping'])
+        except Exception as e:
+            # No fallar si Redis falla, pero loggear el error
+            print(f"Warning: Failed to store mapping in Redis: {e}")
+    
     return out
