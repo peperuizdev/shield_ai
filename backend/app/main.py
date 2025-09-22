@@ -16,14 +16,14 @@ from core.redis_client import get_redis_client
 from services.session_manager import get_anonymization_map
 from models.requests import DeAnonymizationRequest
 
-# === AÑADIDO: Montar routers de health y sessions ===
+# Montar routers de health, sessions y anonimización ===
 from api.routes.health import router as health_router
 from api.routes.sessions import router as sessions_router
+from api.routes.anonymization import router as anonymization_router
 
 app.include_router(health_router)
 app.include_router(sessions_router)
-
-
+app.include_router(anonymization_router, tags=["Anonymization"])
 # === DEANONYMIZATION-SPECIFIC MODELS ===
 
 class StreamingDeAnonymizationRequest(BaseModel):
