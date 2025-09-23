@@ -16,7 +16,7 @@
                 <p><strong>Paso 1:</strong> Escribe tu mensaje con datos reales en el textarea</p>
                 <p><strong>Paso 2:</strong> Click en "Chat + Streaming Integrado"</p>
                 <p><strong>Resultado:</strong> Ve en tiempo real cómo el LLM procesa datos falsos pero tú recibes datos reales</p>          <h4>🚀 Nuevo Endpoint Streaming Integrado</h4>
-                <p><strong>Endpoint:</strong> POST /chat/stream-propuesta</p>
+                <p><strong>Endpoint:</strong> POST /chat/streaming</p>
                 <p><strong>Función:</strong> Chat + Anonimización + LLM + Streaming Dual</p>
                 <p><strong>Ventaja:</strong> Una sola llamada, datos 100% reales</p>           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
@@ -556,7 +556,7 @@
 
             try {
                 // Llamar al nuevo endpoint que hace todo integrado
-                const response = await fetch(`${apiUrl}/chat/stream-propuesta`, {
+                const response = await fetch(`${apiUrl}/chat/streaming`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
