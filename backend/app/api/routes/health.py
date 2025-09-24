@@ -13,7 +13,7 @@ from datetime import datetime
 from fastapi import APIRouter, Query, Depends
 from fastapi.responses import JSONResponse
 
-from core.app import app, get_app_health
+from core.app import get_app_health
 from core.redis_client import get_redis_health, get_redis_stats, is_redis_connected
 from models.requests import HealthCheckRequest
 from models.responses import HealthCheckResponse, SystemStatsResponse
@@ -226,7 +226,7 @@ async def get_system_stats():
         
         # Basic API stats (would be enhanced with proper metrics collection)
         api_stats = {
-            "endpoints_registered": len([route for route in app.routes]),
+            "endpoints_registered": "N/A",  # Would need proper app reference
             "health_check_time": datetime.now().isoformat(),
             "redis_connected": is_redis_connected()
         }

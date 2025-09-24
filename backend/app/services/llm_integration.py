@@ -39,7 +39,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 try:
-    from pii_detector import run_pipeline as pii_run_pipeline
+    from .pii_detector import run_pipeline as pii_run_pipeline
 except ImportError:
     logger.warning("No se pudo importar run_pipeline. Usando función mock.")
     def pii_run_pipeline(model="es", text="", use_regex=True, pseudonymize=False):
@@ -131,7 +131,7 @@ class TLSAdapter(HTTPAdapter):
         return super().proxy_manager_for(*args, **kwargs)
 
 # =====================================================
-# Cliente LLM usando Grok
+# Cliente LLM usando Grok - Versión Original
 # =====================================================
 class LLMClient:
     def __init__(self):
@@ -164,6 +164,160 @@ class LLMClient:
                 time.sleep(2 ** attempt)
         logger.error("Todos los intentos con Grok fallaron")
         return f"[ERROR: No se pudo procesar con Grok. Prompt: {prompt[:100]}...]"
+
+# =====================================================
+# Cliente LLM Mejorado - Propuesta
+# =====================================================
+class LLMClientPropuesta:
+    def __init__(self):
+        self.endpoint = "https://api.groq.com/openai/v1/chat/completions"
+        self.api_key = GROK_API_KEY
+        self.model = "llama-3.1-8b-instant"  # Modelo actualizado que funciona en Groq
+        self.max_retries = 3
+        self.session = requests.Session()
+        self.session.mount("https://", TLSAdapter())
+        
+        if not self.api_key:
+            logger.error("GROK_API_KEY no encontrada. LLMClientPropuesta no funcionará.")
+
+    def call_grok(self, prompt: str, model: str = None, max_tokens: int = 500, temperature: float = 0.7) -> str:
+        """
+        Llama a la API de Groq con manejo mejorado de errores y parsing de respuestas.
+        
+        Args:
+            prompt: Texto a enviar al modelo
+            model: Modelo específico a usar (opcional)
+            max_tokens: Máximo número de tokens en respuesta
+            temperature: Creatividad del modelo (0.0 - 1.0)
+        """
+        if not self.api_key:
+            return "[ERROR: GROK_API_KEY no configurada]"
+            
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": model or self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": temperature
+        }
+
+        for attempt in range(self.max_retries):
+            try:
+                logger.info(f"Enviando request a Groq (intento {attempt + 1}/{self.max_retries})")
+                response = self.session.post(self.endpoint, headers=headers, json=payload, timeout=30)
+                
+                # Log del status code para debugging
+                logger.info(f"Response status: {response.status_code}")
+                
+                if response.status_code == 400:
+                    error_detail = response.json() if response.content else {"error": "Bad Request"}
+                    logger.error(f"Error 400 - Payload: {payload}")
+                    logger.error(f"Error 400 - Response: {error_detail}")
+                    return f"[ERROR: Bad Request - {error_detail.get('error', {}).get('message', 'Formato incorrecto')}]"
+                
+                response.raise_for_status()
+                result = response.json()
+                
+                # Logging para debugging
+                logger.debug(f"Respuesta completa de Groq: {result}")
+                
+                # Parsing correcto para API de Groq/OpenAI
+                if "choices" in result and len(result["choices"]) > 0:
+                    choice = result["choices"][0]
+                    if "message" in choice and "content" in choice["message"]:
+                        content = choice["message"]["content"].strip()
+                        if content:
+                            logger.info("Respuesta exitosa de Groq")
+                            return content
+                
+                # Fallbacks para otros formatos posibles
+                content = result.get("output_text") or result.get("text") or result.get("response")
+                if content:
+                    return content.strip()
+                
+                logger.warning(f"Respuesta de Groq sin contenido válido: {result}")
+                return "[ERROR: Respuesta vacía o formato inesperado de Groq]"
+                
+            except requests.exceptions.Timeout:
+                logger.warning(f"Timeout en intento {attempt+1}")
+                if attempt == self.max_retries - 1:
+                    return "[ERROR: Timeout - Groq no respondió en 30 segundos]"
+                    
+            except requests.exceptions.HTTPError as e:
+                logger.warning(f"HTTP Error en intento {attempt+1}: {e}")
+                if e.response.status_code == 401:
+                    return "[ERROR: API Key inválida o sin permisos]"
+                elif e.response.status_code == 429:
+                    logger.warning("Rate limit alcanzado, esperando más tiempo...")
+                    time.sleep(2 ** (attempt + 2))  # Espera más tiempo en rate limits
+                    continue
+                    
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"Error de conexión en intento {attempt+1}")
+                if attempt == self.max_retries - 1:
+                    return "[ERROR: No se puede conectar a Groq API]"
+                    
+            except Exception as e:
+                logger.warning(f"Error inesperado en intento {attempt+1}: {type(e).__name__}: {e}")
+                
+            # Backoff exponencial entre intentos
+            if attempt < self.max_retries - 1:
+                wait_time = 2 ** attempt
+                logger.info(f"Esperando {wait_time}s antes del siguiente intento...")
+                time.sleep(wait_time)
+        
+        logger.error("Todos los intentos con Groq fallaron")
+        return f"[ERROR: No se pudo procesar con Groq después de {self.max_retries} intentos. Prompt: {prompt[:100]}...]"
+
+    def test_connection(self) -> Dict[str, Any]:
+        """
+        Prueba la conexión con la API de Groq.
+        
+        Returns:
+            Dict con información del estado de la conexión
+        """
+        if not self.api_key:
+            return {
+                "status": "error",
+                "message": "API Key no configurada",
+                "api_key_present": False
+            }
+        
+        test_prompt = "Responde solo con 'OK' si puedes procesar este mensaje."
+        start_time = time.time()
+        
+        try:
+            result = self.call_grok(test_prompt, max_tokens=10)
+            processing_time = time.time() - start_time
+            
+            if "[ERROR:" in result:
+                return {
+                    "status": "error", 
+                    "message": result,
+                    "api_key_present": True,
+                    "processing_time": processing_time
+                }
+            else:
+                return {
+                    "status": "success",
+                    "message": "Conexión exitosa con Groq",
+                    "api_key_present": True,
+                    "test_response": result,
+                    "processing_time": processing_time,
+                    "model": self.model
+                }
+                
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Error en test: {str(e)}",
+                "api_key_present": True,
+                "processing_time": time.time() - start_time
+            }
 
 # =====================================================
 # Pipeline completo: anonimización → LLM → desanonimización

@@ -28,6 +28,15 @@ try:
 except Exception:
     PHONENUMBERS_AVAILABLE = False
 
+# Faker para datos sintéticos realistas
+try:
+    from faker import Faker
+    FAKER_AVAILABLE = True
+    fake = Faker('es_ES')  # Español para datos más realistas
+except Exception:
+    FAKER_AVAILABLE = False
+    fake = None
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
 if REPO_ROOT not in sys.path:
@@ -403,7 +412,54 @@ def resolve_matches(hf_matches, regex_matches):
     return chosen_sorted
 
 
-def apply_replacements_from_matches(original_text: str, matches: List[Dict], use_pseudo: bool = False, pseudo_key: str = None):
+def generate_realistic_fake_data(label: str, original_value: str) -> str:
+    """
+    Generar datos falsos realistas usando Faker basado en el tipo de dato.
+    
+    Args:
+        label: Etiqueta del tipo de dato (PERSON, LOCATION, EMAIL, etc.)
+        original_value: Valor original para contexto
+        
+    Returns:
+        Dato falso realista
+    """
+    if not FAKER_AVAILABLE or not fake:
+        # Fallback a placeholders si Faker no está disponible
+        return f"[{label}_FAKE]"
+    
+    try:
+        label_upper = label.upper()
+        
+        if label_upper in ('PERSON', 'PER'):
+            return fake.name()
+        elif label_upper in ('LOCATION', 'LOC'):
+            return fake.city()
+        elif label_upper == 'ORG':
+            return fake.company()
+        elif '@' in original_value:  # Email detectado por regex
+            return fake.email()
+        elif any(char.isdigit() for char in original_value) and ('+' in original_value or len(original_value.replace(' ', '')) >= 9):  # Teléfono
+            return fake.phone_number()
+        elif label_upper in ('PHONE', 'TEL'):
+            return fake.phone_number()
+        elif label_upper in ('CARD', 'CREDIT'):
+            return fake.credit_card_number()
+        elif label_upper == 'IBAN':
+            return fake.iban()
+        elif label_upper in ('DOB', 'DATE'):
+            return fake.date_of_birth().strftime('%d/%m/%Y')
+        elif label_upper == 'ID':
+            return fake.bothify(text='########?').upper()
+        else:
+            # Para otros tipos, generar nombre genérico
+            return f"{fake.first_name()}_{fake.random_int(10, 99)}"
+            
+    except Exception:
+        # En caso de error, usar fallback
+        return f"[{label}_FAKE]"
+
+
+def apply_replacements_from_matches(original_text: str, matches: List[Dict], use_pseudo: bool = False, pseudo_key: str = None, use_realistic_fake: bool = False):
     anonymized = original_text
     mapping: Dict[str, str] = {}
     counters = {}
@@ -432,7 +488,13 @@ def apply_replacements_from_matches(original_text: str, matches: List[Dict], use
         else:
             ns = 'R'
         counters[keylabel + ns] = counters.get(keylabel + ns, 0) + 1
-        if use_pseudo and src == 'regex':
+        
+        # Generar reemplazo basado en el modo seleccionado
+        if use_realistic_fake:
+            # Modo datos falsos realistas con Faker
+            token = generate_realistic_fake_data(keylabel, orig)
+        elif use_pseudo and src == 'regex':
+            # Modo pseudonymización con hash
             digest = pseudonymize_value(orig, pseudo_key) if pseudo_key else hashlib.sha256(orig.encode()).hexdigest()[:12]
             if '@' in orig:
                 prefix = re.sub(r"\W+", '_', orig.split('@', 1)[0])[:20]
@@ -440,13 +502,15 @@ def apply_replacements_from_matches(original_text: str, matches: List[Dict], use
                 prefix = keylabel.lower()
             token = f"{prefix}_{digest[:8]}"
         else:
+            # Modo placeholder tradicional
             token = f"[{keylabel}_{counters[keylabel + ns]}]"
+            
         mapping[token] = orig
         anonymized = anonymized[:start] + token + anonymized[end:]
     return anonymized, mapping
 
 
-def run_pipeline(model: str, text: str, use_regex: bool = False, pseudonymize: bool = False, save_mapping: bool = True):
+def run_pipeline(model: str, text: str, use_regex: bool = False, pseudonymize: bool = False, save_mapping: bool = True, use_realistic_fake: bool = False):
     model_map = {
         'es': 'mrm8488/bert-spanish-cased-finetuned-ner',
         'en': 'dslim/bert-base-NER',
@@ -476,7 +540,7 @@ def run_pipeline(model: str, text: str, use_regex: bool = False, pseudonymize: b
             hf_matches = []
         chosen = resolve_matches(hf_matches, regex_matches)
         pseudo_key = os.environ.get('PSEUDO_KEY') if pseudonymize else None
-        anonymized, new_map = apply_replacements_from_matches(text, chosen, use_pseudo=pseudonymize, pseudo_key=pseudo_key)
+        anonymized, new_map = apply_replacements_from_matches(text, chosen, use_pseudo=pseudonymize, pseudo_key=pseudo_key, use_realistic_fake=use_realistic_fake)
         merged_mapping.update(new_map)
 
     else:
@@ -491,7 +555,7 @@ def run_pipeline(model: str, text: str, use_regex: bool = False, pseudonymize: b
         regex_matches = collect_regex_matches(text) if use_regex else []
         chosen = resolve_matches(hf_matches, regex_matches)
         pseudo_key = os.environ.get('PSEUDO_KEY') if pseudonymize else None
-        anonymized, new_map = apply_replacements_from_matches(text, chosen, use_pseudo=pseudonymize, pseudo_key=pseudo_key)
+        anonymized, new_map = apply_replacements_from_matches(text, chosen, use_pseudo=pseudonymize, pseudo_key=pseudo_key, use_realistic_fake=use_realistic_fake)
         merged_mapping.update(new_map)
         if use_regex:
             backend += "+regex"

@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shield AI - Test Productivo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif                  <h4>🚀 Cómo Usar - Streaming Integrado</h4>
+                <p><strong>Paso 1:</strong> Escribe tu mensaje con datos reales en el textarea</p>
+                <p><strong>Paso 2:</strong> Click en "Chat + Streaming Integrado"</p>
+                <p><strong>Resultado:</strong> Ve en tiempo real cómo el LLM procesa datos falsos pero tú recibes datos reales</p>          <h4>🚀 Nuevo Endpoint Streaming Integrado</h4>
+                <p><strong>Endpoint:</strong> POST /chat/streaming</p>
+                <p><strong>Función:</strong> Chat + Anonimización + LLM + Streaming Dual</p>
+                <p><strong>Ventaja:</strong> Una sola llamada, datos 100% reales</p>           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .input-group label {
+            font-weight: 600;
+            color: #495057;
+            min-width: 120px;
+        }
+
+        .input-group input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        .prompt-area {
+            width: 100%;
+            min-height: 120px;
+            padding: 15px;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            font-size: 16px;
+            font-family: inherit;
+            resize: vertical;
+            transition: all 0.3s ease;
+        }
+
+        .prompt-area:focus {
+            outline: none;
+            border-color: #3498db;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: relative;
+            overflow: hidden;
+            min-width: 140px;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-loading {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(52, 152, 219, 0.3);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(149, 165, 166, 0.3);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(231, 76, 60, 0.3);
+        }
+
+        .response-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+            min-height: 500px;
+        }
+
+        .response-box {
+            background: #ffffff;
+            border: 2px solid #dee2e6;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .response-box:hover {
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.12);
+        }
+
+        .response-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f1f3f4;
+        }
+
+        .response-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 18px;
+        }
+
+        .chat-icon {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+        }
+
+        .stream-icon {
+            background: linear-gradient(135deg, #00b894, #00a085);
+            color: white;
+        }
+
+        .response-title {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+
+        .response-content {
+            min-height: 300px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-y: auto;
+            max-height: 400px;
+            position: relative;
+        }
+
+        .response-content.loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 15px;
+            color: #6c757d;
+        }
+
+        .loading-animation {
+            display: flex;
+            gap: 8px;
+        }
+
+        .loading-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            animation: loadingPulse 1.5s ease-in-out infinite;
+        }
+
+        .loading-dot:nth-child(1) { animation-delay: 0s; }
+        .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+        .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+        .loading-dot:nth-child(4) { animation-delay: 0.6s; }
+        .loading-dot:nth-child(5) { animation-delay: 0.8s; }
+
+        @keyframes loadingPulse {
+            0%, 80%, 100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+            40% {
+                transform: scale(1.2);
+                opacity: 1;
+            }
+        }
+
+        .chat-content {
+            border-left: 4px solid #3498db;
+            color: #2c3e50;
+        }
+
+        .stream-content {
+            border-left: 4px solid #00b894;
+            color: #27ae60;
+        }
+
+        .status-bar {
+            background: #2c3e50;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #95a5a6;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.active {
+            background: #2ecc71;
+        }
+
+        .status-dot.error {
+            background: #e74c3c;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            z-index: 1000;
+            transform: translateX(400px);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.success {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+        }
+
+        .notification.error {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+        }
+
+        .endpoint-info {
+            background: #e3f2fd;
+            border: 1px solid #bbdefb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .endpoint-info h4 {
+            color: #1976d2;
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .response-container {
+                grid-template-columns: 1fr;
+                gap: 20px;
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .input-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .input-group label {
+                min-width: auto;
+                margin-bottom: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ Shield AI - Streaming Viewer</h1>
+            <p>Visualiza el streaming de deanonymización de una sesión ejecutada desde Swagger</p>
+        </div>
+
+        <div class="controls">
+            <div class="endpoint-info">
+                <h4>� Cómo Usar</h4>
+                <p><strong>Paso 1:</strong> Escribe tu mensaje con datos reales en el textarea</p>
+                <p><strong>Paso 2:</strong> Click en "Chat + Streaming Integrado"</p>
+                <p><strong>Resultado:</strong> Ve en tiempo real cómo el LLM procesa datos falsos pero tú recibes datos reales</p>
+                <p><strong>Swagger URL:</strong> <a href="http://localhost:8000/docs" target="_blank">http://localhost:8000/docs</a></p>
+            </div>
+
+            <div class="input-group">
+                <label for="sessionId">Session ID:</label>
+                                <input type="text" id="sessionId" placeholder="Ej: mi_sesion_001" value="session_" readonly>
+            </div>
+            
+            <div class="input-group">
+                <label for="apiUrl">API URL:</label>
+                <input type="text" id="apiUrl" placeholder="http://localhost:8000" value="http://localhost:8000">
+            </div>
+
+            <div class="input-group">
+                <label for="userMessage">Tu Mensaje:</label>
+            </div>
+            <textarea id="userMessage" class="prompt-area" placeholder="Escribe tu mensaje con datos reales...">Hola, mi nombre es Juan García y vivo en Madrid. Mi email es juan.garcia@gmail.com y mi teléfono es +34 612 345 678. ¿Puedes ayudarme con mi consulta?</textarea>
+
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="startIntegratedStreaming()" id="consultBtn">
+                    <span class="btn-text">🚀 Chat + Streaming Integrado</span>
+                    <span class="btn-loading" style="display: none;">
+                        <div class="spinner"></div>
+                        <span>Procesando...</span>
+                    </span>
+                </button>
+                <button class="btn btn-danger" onclick="clearAll()">
+                    🧹 Limpiar
+                </button>
+            </div>
+        </div>
+
+        <div class="response-container">
+            <div class="response-box">
+                <div class="response-header">
+                    <div class="response-icon chat-icon">�</div>
+                    <div class="response-title">Respuesta con Datos Falsos (LLM)</div>
+                </div>
+                <div class="response-content chat-content" id="sessionInfo">
+                    Esperando mensaje con datos falsos...
+                </div>
+            </div>
+
+            <div class="response-box">
+                <div class="response-header">
+                    <div class="response-icon stream-icon">🔓</div>
+                    <div class="response-title">Respuesta con Datos Reales (Usuario)</div>
+                </div>
+                <div class="response-content stream-content" id="streamResponse">
+                    Esperando datos reales...
+                </div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-indicator">
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Listo para comenzar</span>
+            </div>
+            <div id="statsText">Esperando datos...</div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        let currentSessionId = null;
+
+        // Generar session_id automáticamente al cargar la página
+        function generateSessionId() {
+            const timestamp = new Date().getTime();
+            const random = Math.floor(Math.random() * 1000);
+            return `session_${timestamp}_${random}`;
+        }
+
+        // Establecer session_id al cargar la página
+        window.addEventListener('load', function() {
+            document.getElementById('sessionId').value = generateSessionId();
+        });
+
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = `notification ${type}`;
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+
+        function updateStatus(text, active = false, error = false) {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            
+            statusText.textContent = text;
+            statusDot.className = 'status-dot';
+            
+            if (error) {
+                statusDot.classList.add('error');
+            } else if (active) {
+                statusDot.classList.add('active');
+            }
+        }
+
+        function showLoadingState() {
+            const consultBtn = document.getElementById('consultBtn');
+            const btnText = consultBtn.querySelector('.btn-text');
+            const btnLoading = consultBtn.querySelector('.btn-loading');
+            
+            btnText.style.display = 'none';
+            btnLoading.style.display = 'flex';
+            consultBtn.disabled = true;
+        }
+
+        function hideLoadingState() {
+            const consultBtn = document.getElementById('consultBtn');
+            const btnText = consultBtn.querySelector('.btn-text');
+            const btnLoading = consultBtn.querySelector('.btn-loading');
+            
+            btnText.style.display = 'inline';
+            btnLoading.style.display = 'none';
+            consultBtn.disabled = false;
+        }
+
+        async function startIntegratedStreaming() {
+            const sessionId = document.getElementById('sessionId').value;
+            const apiUrl = document.getElementById('apiUrl').value;
+            const message = document.getElementById('userMessage').value;
+            
+            if (!sessionId || !message.trim()) {
+                showNotification('Por favor, completa todos los campos', 'error');
+                return;
+            }
+
+            currentSessionId = sessionId;
+            showLoadingState();
+            updateStatus('Iniciando chat integrado con streaming...', true);
+
+            try {
+                // Llamar al nuevo endpoint que hace todo integrado
+                const response = await fetch(`${apiUrl}/chat/streaming`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream',
+                        'Cache-Control': 'no-cache'
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        session_id: sessionId,
+                        use_realistic_fake: true,
+                        save_mapping: true
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                
+                const anonymousElement = document.getElementById('sessionInfo');
+                const deanonymousElement = document.getElementById('streamResponse');
+                
+                anonymousElement.textContent = '';
+                deanonymousElement.textContent = '';
+                
+                let anonymousText = '';
+                let deanonymousText = '';
+                let isFirstChunk = true;
+
+                function readStream() {
+                    return reader.read().then(({ done, value }) => {
+                        if (done) {
+                            hideLoadingState();
+                            updateStatus('Streaming completado exitosamente ✨');
+                            showNotification('Chat + Streaming completado! 🎉');
+                            return;
+                        }
+
+                        if (isFirstChunk) {
+                            hideLoadingState();
+                            updateStatus('Recibiendo streaming dual...', true);
+                            isFirstChunk = false;
+                        }
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        const lines = chunk.split('\n');
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.substring(6));
+                                    
+                                    if (data.type === 'metadata') {
+                                        document.getElementById('statsText').textContent = 
+                                            `PII detectado: ${data.pii_detected} | Entidades: ${data.entity_count}`;
+                                            
+                                    } else if (data.type === 'anonymous') {
+                                        anonymousText += data.chunk;
+                                        anonymousElement.textContent = anonymousText;
+                                        anonymousElement.scrollTop = anonymousElement.scrollHeight;
+                                        
+                                    } else if (data.type === 'deanonymized') {
+                                        deanonymousText += data.chunk;
+                                        deanonymousElement.textContent = deanonymousText;
+                                        deanonymousElement.scrollTop = deanonymousElement.scrollHeight;
+                                        
+                                    } else if (data.type === 'complete') {
+                                        updateStatus('Streaming completado');
+                                        showNotification('Todo el flujo completado exitosamente! 🎉');
+                                        return;
+                                    } else if (data.type === 'error') {
+                                        throw new Error(data.error);
+                                    }
+                                    
+                                } catch (error) {
+                                    console.error('Error parsing SSE data:', error);
+                                }
+                            }
+                        }
+
+                        return readStream();
+                    });
+                }
+
+                readStream();
+                
+            } catch (error) {
+                hideLoadingState();
+                updateStatus('Error en streaming integrado', false, true);
+                showNotification(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function startDeanonymizationStream(apiUrl, sessionId) {
+            updateStatus('Conectando al streaming...', true);
+            
+            try {
+                const response = await fetch(`${apiUrl}/deanonymize/dual-stream/${sessionId}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'text/event-stream',
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                const streamElement = document.getElementById('streamResponse');
+                streamElement.textContent = '';
+
+                let isFirstChunk = true;
+
+                function readStream() {
+                    return reader.read().then(({ done, value }) => {
+                        if (done) {
+                            hideLoadingState();
+                            updateStatus('Flujo completo terminado ✨');
+                            showNotification('Flujo productivo completado exitosamente! 🎉');
+                            return;
+                        }
+
+                        if (isFirstChunk) {
+                            hideLoadingState();
+                            updateStatus('Recibiendo streaming...', true);
+                            isFirstChunk = false;
+                        }
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        const lines = chunk.split('\n');
+
+                        for (const line of lines) {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.substring(6));
+                                    
+                                    if (data.type === 'deanonymized' && data.chunk) {
+                                        streamElement.textContent += data.chunk;
+                                        streamElement.scrollTop = streamElement.scrollHeight;
+                                    }
+                                    
+                                } catch (error) {
+                                    console.error('Error parsing SSE data:', error);
+                                }
+                            }
+                        }
+
+                        return readStream();
+                    });
+                }
+
+                readStream();
+
+            } catch (error) {
+                hideLoadingState();
+                updateStatus('Error en streaming', false, true);
+                showNotification(`Error en streaming: ${error.message}`, 'error');
+            }
+        }
+
+        function clearAll() {
+            hideLoadingState();
+            document.getElementById('sessionInfo').textContent = 'Esperando mensaje con datos falsos...';
+            document.getElementById('streamResponse').textContent = 'Esperando datos reales...';
+            document.getElementById('statsText').textContent = 'Esperando datos...';
+            updateStatus('Todo limpiado');
+            currentSessionId = null;
+        }
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            // Cleanup any ongoing streams
+        });
+    </script>
+</body>
+</html>
