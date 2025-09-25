@@ -33,11 +33,9 @@ const InputPanel = () => {
       actions.clearError();
       actions.resetProcess();
       
-      // Generar ID de sesión único
       const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       actions.setSessionId(sessionId);
 
-      // Preparar datos para el flujo completo
       const requestData = {
         sessionId,
         text: state.inputText,
@@ -47,39 +45,32 @@ const InputPanel = () => {
 
       console.log('🚀 Iniciando flujo completo: Anonimización + Dual Streaming');
 
-      // FLUJO COMPLETO: /anonymize → Panel 1, /chat/streaming → Panel 2 + 3
       await anonymizationService.processCompleteFlow(requestData, {
         
-        // ===== CALLBACK PANEL 1: DATOS ANONIMIZADOS =====
         onAnonymized: (anonymizedData) => {
           actions.setAnonymizedText(anonymizedData.text);
           console.log('✅ Panel 1 actualizado - Datos anonimizados');
           console.log('🔍 PII detectado:', anonymizedData.pii_detected);
         },
 
-        // ===== CALLBACK INICIO STREAMING PANELES 2 + 3 =====
         onStreamStart: () => {
           actions.startStreaming();
           console.log('🚀 Iniciando streaming para paneles 2 y 3');
         },
 
-        // ===== CALLBACK PANEL 2: RESPUESTA ANÓNIMA =====
         onAnonymousChunk: (anonymousText) => {
           actions.setModelResponse(anonymousText);
           console.log('🤖 Panel 2 actualizado - Respuesta anónima');
         },
 
-        // ===== CALLBACK PANEL 3: RESPUESTA DESANONIMIZADA =====
         onDeanonymizedChunk: (deanonymizedText) => {
           actions.updateStreamingText(deanonymizedText);
           console.log('✨ Panel 3 actualizado - Respuesta desanonimizada');
         },
 
-        // ===== CALLBACK FIN DEL PROCESO =====
         onStreamEnd: (result) => {
           actions.stopStreaming();
           
-          // Asegurar que todos los paneles tienen datos finales
           if (result.anonymousResponse) {
             actions.setModelResponse(result.anonymousResponse);
           }
@@ -88,13 +79,12 @@ const InputPanel = () => {
           }
 
           console.log('🎉 Flujo completo terminado:', {
-            panel1: true, // Siempre tendrá datos anonimizados
+            panel1: true, 
             panel2: !!result.anonymousResponse,
             panel3: !!result.finalResponse
           });
         },
 
-        // ===== CALLBACK DE ERROR =====
         onError: (error) => {
           console.error('❌ Error en flujo completo:', error);
           actions.setError(error.message);
@@ -114,7 +104,6 @@ const InputPanel = () => {
   const isDisabled = state.isLoading || state.isStreaming;
   const hasContent = state.inputText.trim() || state.inputFile || state.inputImage;
 
-  // Función para probar ambos endpoints (solo desarrollo)
   const handleTestEndpoints = async () => {
     try {
       const results = await anonymizationService.testEndpoints();
@@ -138,7 +127,6 @@ Texto anonimizado: ${results.anonymize.anonymized}`);
 
   return (
     <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
-      {/* Header del panel */}
       <div className="bg-gradient-to-r from-brand-primary to-brand-secondary px-6 py-4">
         <div className="flex justify-between items-start">
           <div>
@@ -151,7 +139,6 @@ Texto anonimizado: ${results.anonymize.anonymized}`);
             </p>
           </div>
           
-          {/* Botón de test solo en desarrollo */}
           {process.env.NODE_ENV === 'development' && (
             <Button
               onClick={handleTestEndpoints}
@@ -165,7 +152,6 @@ Texto anonimizado: ${results.anonymize.anonymized}`);
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="border-b border-gray-200">
         <nav className="flex space-x-0">
           <button
@@ -201,9 +187,7 @@ Texto anonimizado: ${results.anonymize.anonymized}`);
         </nav>
       </div>
 
-      {/* Contenido del panel */}
       <div className="p-6">
-        {/* Tab de Texto */}
         {activeTab === 'text' && (
           <div className="space-y-4">
             <TextArea
@@ -219,7 +203,6 @@ Texto anonimizado: ${results.anonymize.anonymized}`);
               Verás 3 pasos: datos anonimizados → respuesta con datos falsos → respuesta con datos reales
             </div>
             
-            {/* Indicadores de progreso */}
             {state.isLoading && !state.isStreaming && (
               <div className="flex items-center space-x-2 text-xs text-brand-primary bg-brand-light bg-opacity-20 px-3 py-2 rounded-lg">
                 <div className="animate-pulse w-2 h-2 bg-brand-primary rounded-full"></div>
@@ -236,7 +219,6 @@ Texto anonimizado: ${results.anonymize.anonymized}`);
           </div>
         )}
 
-        {/* Tab de Archivo */}
         {activeTab === 'file' && (
           <div className="space-y-4">
             <FileUpload
@@ -252,7 +234,6 @@ Texto anonimizado: ${results.anonymize.anonymized}`);
           </div>
         )}
 
-        {/* Tab de Imagen */}
         {activeTab === 'image' && (
           <div className="space-y-4">
             <FileUpload
@@ -270,7 +251,6 @@ Texto anonimizado: ${results.anonymize.anonymized}`);
           </div>
         )}
 
-        {/* Botón de envío */}
         <div className="mt-6 flex justify-end">
           <Button
             onClick={handleSubmit}
@@ -287,7 +267,6 @@ Texto anonimizado: ${results.anonymize.anonymized}`);
           </Button>
         </div>
 
-        {/* Mostrar error si existe */}
         {state.error && (
           <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-2">
             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
@@ -295,7 +274,6 @@ Texto anonimizado: ${results.anonymize.anonymized}`);
           </div>
         )}
 
-        {/* Info del proceso para desarrollo */}
         {process.env.NODE_ENV === 'development' && state.sessionId && (
           <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
             <p className="text-xs text-gray-600">

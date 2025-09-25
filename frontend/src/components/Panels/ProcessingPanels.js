@@ -9,7 +9,6 @@ const ProcessingPanels = () => {
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    // TODO: Agregar toast notification
   };
 
   const downloadText = (text, filename) => {
@@ -25,7 +24,7 @@ const ProcessingPanels = () => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       
-      {/* Panel 1: Datos Anonimizados (Resultado del endpoint /anonymize) */}
+      {/* Panel 1: Datos Anonimizados */}
       <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
         <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-4 py-3">
           <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
@@ -77,7 +76,7 @@ const ProcessingPanels = () => {
         </div>
       </div>
 
-      {/* Panel 2: Respuesta Anónima (Stream 1 del endpoint /chat/streaming) */}
+      {/* Panel 2: Respuesta Anónima */}
       <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
         <div className="bg-gradient-to-r from-brand-primary to-brand-secondary px-4 py-3">
           <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
@@ -147,7 +146,7 @@ const ProcessingPanels = () => {
         </div>
       </div>
 
-      {/* Panel 3: Respuesta Desanonimizada (Stream 2 del endpoint /chat/streaming) */}
+      {/* Panel 3: Respuesta Desanonimizada */}
       <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
         <div className="bg-gradient-to-r from-green-500 to-green-600 px-4 py-3">
           <h3 className="text-sm font-semibold text-white flex items-center space-x-2">

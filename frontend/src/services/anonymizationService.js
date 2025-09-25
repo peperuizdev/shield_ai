@@ -27,9 +27,9 @@ apiClient.interceptors.response.use(
 class AnonymizationService {
  
   /**
-   * FLUJO COMPLETO: Anonimización + Dual Streaming Chat
-   * 1. Llama a /anonymize → Panel 1
-   * 2. Llama a /chat/streaming → Panel 2 + 3
+   * Anonimización + Dual Streaming Chat
+   * anonymize → Panel 1
+   * chat/streaming → Panel 2 + 3
    */
   async processCompleteFlow(requestData, callbacks = {}) {
     const { sessionId, text, file, image } = requestData;
@@ -43,7 +43,6 @@ class AnonymizationService {
     } = callbacks;
 
     try {
-      // ===== PASO 1: ANONIMIZACIÓN → PANEL 1 =====
       console.log('🔐 Step 1: Anonimizando texto...');
       
       const anonymizationResult = await this.anonymizeText({
@@ -54,7 +53,6 @@ class AnonymizationService {
         pseudonymize: true
       });
 
-      // Mostrar resultado en Panel 1
       if (onAnonymized) {
         onAnonymized({
           text: anonymizationResult.anonymized,
@@ -65,13 +63,12 @@ class AnonymizationService {
 
       console.log('✅ Anonimización completada, PII detectado:', Object.keys(anonymizationResult.mapping || {}).length > 0);
 
-      // ===== PASO 2: DUAL STREAMING CHAT → PANEL 2 + 3 =====
       console.log('🚀 Step 2: Iniciando dual streaming...');
       
       const streamingResult = await this.processDualStreamingChat(
         {
           sessionId,
-          text, // Texto original, el backend usará el mapa guardado en Redis
+          text, 
           file,
           image
         },
@@ -96,9 +93,6 @@ class AnonymizationService {
     }
   }
 
-  /**
-   * PASO 1: Anonimización usando endpoint /anonymize
-   */
   async anonymizeText(data) {
     console.log('📤 Llamando a /anonymize...');
     
@@ -114,9 +108,6 @@ class AnonymizationService {
     return response.data;
   }
 
-  /**
-   * PASO 2: Dual streaming usando endpoint /chat/streaming  
-   */
   async processDualStreamingChat(requestData, callbacks = {}) {
     const { sessionId, text, file, image } = requestData;
     const {
@@ -128,14 +119,13 @@ class AnonymizationService {
     } = callbacks;
 
     try {
-      // Preparar datos para el endpoint de chat streaming
       const chatRequest = {
         message: text || '',
         session_id: sessionId,
         model: 'es',
         use_regex: true,
         pseudonymize: true,
-        save_mapping: true, // Usar mapa existente de la sesión
+        save_mapping: true, 
         use_realistic_fake: true
       };
 
@@ -181,7 +171,7 @@ class AnonymizationService {
                 case 'llm_chunk_anonymous':
                 case 'anonymous_chunk':
                 case 'chunk_anonymous':
-                case 'anonymous': // ← AÑADIR ESTA LÍNEA
+                case 'anonymous': 
                   currentAnonymousResponse += eventData.chunk || eventData.content || eventData.data || '';
                   if (onAnonymousChunk) {
                     onAnonymousChunk(currentAnonymousResponse);
@@ -191,7 +181,7 @@ class AnonymizationService {
                 case 'llm_chunk_deanonymized':
                 case 'deanonymized_chunk':
                 case 'chunk_deanonymized':
-                case 'deanonymized': // ← AÑADIR ESTA LÍNEA
+                case 'deanonymized': 
                   currentDeanonymizedResponse += eventData.chunk || eventData.content || eventData.data || '';
                   if (onDeanonymizedChunk) {
                     onDeanonymizedChunk(currentDeanonymizedResponse);
@@ -218,7 +208,6 @@ class AnonymizationService {
                 
                 default:
                   console.log('🔄 Evento SSE desconocido:', eventData.type, eventData);
-                  // Intentar procesar como chunk genérico
                   if (eventData.content || eventData.data) {
                     currentDeanonymizedResponse += eventData.content || eventData.data;
                     if (onDeanonymizedChunk) {
@@ -233,7 +222,6 @@ class AnonymizationService {
         }
       }
 
-      // Si llegamos aquí sin evento 'complete', devolver lo que tenemos
       if (onStreamEnd) {
         onStreamEnd({
           anonymousResponse: currentAnonymousResponse,
@@ -253,7 +241,6 @@ class AnonymizationService {
     }
   }
 
-  // Métodos individuales para casos específicos
   async anonymizeData(data) {
     return this.anonymizeText(data);
   }
@@ -267,7 +254,6 @@ class AnonymizationService {
     return response.data.success ? response.data.deanonymized_text : data.response;
   }
 
-  // Método legacy para compatibilidad total
   async processAnonymization(requestData, callbacks = {}) {
     console.warn('processAnonymization redirigido a processCompleteFlow');
     return this.processCompleteFlow(requestData, callbacks);
@@ -300,13 +286,11 @@ class AnonymizationService {
     }
   }
 
-  // Método para probar ambos endpoints
   async testEndpoints() {
     try {
       const sessionId = `test_${Date.now()}`;
       const testText = "Hola, soy Juan Pérez de Madrid";
 
-      // Test 1: /anonymize
       console.log('🧪 Testing /anonymize...');
       const anonymizeResult = await this.anonymizeText({
         text: testText,
@@ -314,7 +298,6 @@ class AnonymizationService {
         model: 'es'
       });
 
-      // Test 2: /chat/streaming  
       console.log('🧪 Testing /chat/streaming...');
       const streamingResponse = await fetch(`${API_BASE_URL}/chat/streaming`, {
         method: 'POST',
@@ -348,8 +331,6 @@ class AnonymizationService {
   }
 }
 
-// Instancia singleton del servicio
 export const anonymizationService = new AnonymizationService();
 
-// Exportar también la clase para testing
 export default AnonymizationService;
