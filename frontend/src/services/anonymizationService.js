@@ -26,39 +26,69 @@ apiClient.interceptors.response.use(
 
 class AnonymizationService {
  
-  async processAnonymization(requestData, callbacks = {}) {
+  /**
+   * FLUJO COMPLETO: Anonimización + Dual Streaming Chat
+   * 1. Llama a /anonymize → Panel 1
+   * 2. Llama a /chat/streaming → Panel 2 + 3
+   */
+  async processCompleteFlow(requestData, callbacks = {}) {
     const { sessionId, text, file, image } = requestData;
     const {
       onAnonymized,
       onStreamStart,
-      onStreamData,
+      onAnonymousChunk,
+      onDeanonymizedChunk,
       onStreamEnd,
-      onDeanonymized,
       onError
     } = callbacks;
 
     try {
-      // Anonimizar datos
-      const anonymizedData = await this.anonymizeData({ text, file, image, sessionId });
-      if (onAnonymized) onAnonymized(anonymizedData);
-
-      // Enviar a modelo con streaming
-      const modelResponse = await this.sendToModel(anonymizedData, {
-        onStreamStart,
-        onStreamData,
-        onStreamEnd,
-        sessionId
-      });
-
-      // Desanonimizar respuesta
-      const finalResponse = await this.deanonymizeResponse({
-        response: modelResponse,
-        sessionId
-      });
+      // ===== PASO 1: ANONIMIZACIÓN → PANEL 1 =====
+      console.log('🔐 Step 1: Anonimizando texto...');
       
-      if (onDeanonymized) onDeanonymized(finalResponse);
+      const anonymizationResult = await this.anonymizeText({
+        text,
+        session_id: sessionId,
+        model: 'es',
+        use_regex: true,
+        pseudonymize: true
+      });
 
-      return finalResponse;
+      // Mostrar resultado en Panel 1
+      if (onAnonymized) {
+        onAnonymized({
+          text: anonymizationResult.anonymized,
+          mapping: anonymizationResult.mapping,
+          pii_detected: Object.keys(anonymizationResult.mapping || {}).length > 0
+        });
+      }
+
+      console.log('✅ Anonimización completada, PII detectado:', Object.keys(anonymizationResult.mapping || {}).length > 0);
+
+      // ===== PASO 2: DUAL STREAMING CHAT → PANEL 2 + 3 =====
+      console.log('🚀 Step 2: Iniciando dual streaming...');
+      
+      const streamingResult = await this.processDualStreamingChat(
+        {
+          sessionId,
+          text, // Texto original, el backend usará el mapa guardado en Redis
+          file,
+          image
+        },
+        {
+          onStreamStart,
+          onAnonymousChunk,
+          onDeanonymizedChunk,
+          onStreamEnd,
+          onError
+        }
+      );
+
+      return {
+        anonymized: anonymizationResult.anonymized,
+        mapping: anonymizationResult.mapping,
+        ...streamingResult
+      };
 
     } catch (error) {
       if (onError) onError(error);
@@ -66,57 +96,71 @@ class AnonymizationService {
     }
   }
 
-  async anonymizeData(data) {
-    const formData = new FormData();
+  /**
+   * PASO 1: Anonimización usando endpoint /anonymize
+   */
+  async anonymizeText(data) {
+    console.log('📤 Llamando a /anonymize...');
     
-    if (data.text) {
-      formData.append('text', data.text);
-    }
-    
-    if (data.file) {
-      formData.append('file', data.file);
-    }
-    
-    if (data.image) {
-      formData.append('image', data.image);
-    }
-    
-    formData.append('session_id', data.sessionId);
-
-    const response = await apiClient.post('/anonymize', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+    const response = await apiClient.post('/anonymize', {
+      text: data.text,
+      model: data.model || 'es',
+      use_regex: data.use_regex !== false,
+      pseudonymize: data.pseudonymize !== false,
+      session_id: data.session_id
     });
 
+    console.log('📥 Respuesta de /anonymize:', response.data);
     return response.data;
   }
 
-  async sendToModel(anonymizedData, callbacks = {}) {
-    const { onStreamStart, onStreamData, onStreamEnd, sessionId } = callbacks;
-    
-    if (onStreamStart) onStreamStart();
+  /**
+   * PASO 2: Dual streaming usando endpoint /chat/streaming  
+   */
+  async processDualStreamingChat(requestData, callbacks = {}) {
+    const { sessionId, text, file, image } = requestData;
+    const {
+      onStreamStart,
+      onAnonymousChunk,
+      onDeanonymizedChunk,
+      onStreamEnd,
+      onError
+    } = callbacks;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/process-llm`, {
+      // Preparar datos para el endpoint de chat streaming
+      const chatRequest = {
+        message: text || '',
+        session_id: sessionId,
+        model: 'es',
+        use_regex: true,
+        pseudonymize: true,
+        save_mapping: true, // Usar mapa existente de la sesión
+        use_realistic_fake: true
+      };
+
+      console.log('📤 Llamando a /chat/streaming con session_id:', sessionId);
+
+      if (onStreamStart) onStreamStart();
+
+      const response = await fetch(`${API_BASE_URL}/chat/streaming`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          anonymized_text: anonymizedData.text || anonymizedData.content,
-          session_id: sessionId,
-          stream: true
-        }),
+        body: JSON.stringify(chatRequest),
       });
 
       if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Error ${response.status}: ${errorData.detail || response.statusText}`);
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let fullResponse = '';
+
+      let currentAnonymousResponse = '';
+      let currentDeanonymizedResponse = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -129,41 +173,105 @@ class AnonymizationService {
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6));
+              const eventData = JSON.parse(line.slice(6));
               
-              if (data.type === 'chunk') {
-                fullResponse += data.content;
-                if (onStreamData) onStreamData(fullResponse);
-              } else if (data.type === 'end') {
-                if (onStreamEnd) onStreamEnd(fullResponse);
-                return fullResponse;
-              } else if (data.type === 'error') {
-                throw new Error(data.message);
+              console.log('📥 Evento SSE recibido:', eventData.type);
+              
+              switch (eventData.type) {
+                case 'llm_chunk_anonymous':
+                case 'anonymous_chunk':
+                case 'chunk_anonymous':
+                case 'anonymous': // ← AÑADIR ESTA LÍNEA
+                  currentAnonymousResponse += eventData.chunk || eventData.content || eventData.data || '';
+                  if (onAnonymousChunk) {
+                    onAnonymousChunk(currentAnonymousResponse);
+                  }
+                  break;
+                
+                case 'llm_chunk_deanonymized':
+                case 'deanonymized_chunk':
+                case 'chunk_deanonymized':
+                case 'deanonymized': // ← AÑADIR ESTA LÍNEA
+                  currentDeanonymizedResponse += eventData.chunk || eventData.content || eventData.data || '';
+                  if (onDeanonymizedChunk) {
+                    onDeanonymizedChunk(currentDeanonymizedResponse);
+                  }
+                  break;
+                
+                case 'complete':
+                case 'end':
+                case 'done':
+                  if (onStreamEnd) {
+                    onStreamEnd({
+                      anonymousResponse: currentAnonymousResponse,
+                      finalResponse: currentDeanonymizedResponse,
+                      sessionId: eventData.session_id || sessionId
+                    });
+                  }
+                  return {
+                    anonymousResponse: currentAnonymousResponse,
+                    finalResponse: currentDeanonymizedResponse
+                  };
+                
+                case 'error':
+                  throw new Error(eventData.message || eventData.error || 'Error en el streaming');
+                
+                default:
+                  console.log('🔄 Evento SSE desconocido:', eventData.type, eventData);
+                  // Intentar procesar como chunk genérico
+                  if (eventData.content || eventData.data) {
+                    currentDeanonymizedResponse += eventData.content || eventData.data;
+                    if (onDeanonymizedChunk) {
+                      onDeanonymizedChunk(currentDeanonymizedResponse);
+                    }
+                  }
               }
             } catch (parseError) {
-              console.warn('Error parsing SSE data:', parseError);
+              console.warn('⚠️ Error parsing SSE data:', parseError, line);
             }
           }
         }
       }
 
-      if (onStreamEnd) onStreamEnd(fullResponse);
-      return fullResponse;
+      // Si llegamos aquí sin evento 'complete', devolver lo que tenemos
+      if (onStreamEnd) {
+        onStreamEnd({
+          anonymousResponse: currentAnonymousResponse,
+          finalResponse: currentDeanonymizedResponse,
+          sessionId
+        });
+      }
+
+      return {
+        anonymousResponse: currentAnonymousResponse,
+        finalResponse: currentDeanonymizedResponse
+      };
 
     } catch (error) {
-      throw new Error(`Error en streaming: ${error.message}`);
+      if (onError) onError(error);
+      throw error;
     }
+  }
+
+  // Métodos individuales para casos específicos
+  async anonymizeData(data) {
+    return this.anonymizeText(data);
   }
 
   async deanonymizeResponse(data) {
     const response = await apiClient.post('/deanonymize', {
-      response: data.response,
+      text: data.response,
       session_id: data.sessionId
     });
 
-    return response.data.deanonymized_response;
+    return response.data.success ? response.data.deanonymized_text : data.response;
   }
 
+  // Método legacy para compatibilidad total
+  async processAnonymization(requestData, callbacks = {}) {
+    console.warn('processAnonymization redirigido a processCompleteFlow');
+    return this.processCompleteFlow(requestData, callbacks);
+  }
 
   async checkHealth() {
     try {
@@ -174,10 +282,9 @@ class AnonymizationService {
     }
   }
 
-
   async getSessionStats(sessionId) {
     try {
-      const response = await apiClient.get(`/session/${sessionId}/stats`);
+      const response = await apiClient.get(`/sessions/${sessionId}/stats`);
       return response.data;
     } catch (error) {
       console.warn('No se pudieron obtener las estadísticas de sesión:', error);
@@ -185,12 +292,58 @@ class AnonymizationService {
     }
   }
 
-
   async clearSession(sessionId) {
     try {
-      await apiClient.delete(`/session/${sessionId}`);
+      await apiClient.delete(`/sessions/${sessionId}`);
     } catch (error) {
       console.warn('Error al limpiar la sesión:', error);
+    }
+  }
+
+  // Método para probar ambos endpoints
+  async testEndpoints() {
+    try {
+      const sessionId = `test_${Date.now()}`;
+      const testText = "Hola, soy Juan Pérez de Madrid";
+
+      // Test 1: /anonymize
+      console.log('🧪 Testing /anonymize...');
+      const anonymizeResult = await this.anonymizeText({
+        text: testText,
+        session_id: sessionId,
+        model: 'es'
+      });
+
+      // Test 2: /chat/streaming  
+      console.log('🧪 Testing /chat/streaming...');
+      const streamingResponse = await fetch(`${API_BASE_URL}/chat/streaming`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: testText,
+          session_id: sessionId,
+          model: 'es'
+        }),
+      });
+
+      return {
+        anonymize: {
+          status: 'success',
+          pii_detected: Object.keys(anonymizeResult.mapping || {}).length > 0,
+          anonymized: anonymizeResult.anonymized
+        },
+        streaming: {
+          status: streamingResponse.ok ? 'success' : 'error',
+          statusCode: streamingResponse.status,
+          contentType: streamingResponse.headers.get('content-type')
+        }
+      };
+
+    } catch (error) {
+      return {
+        status: 'error',
+        error: error.message
+      };
     }
   }
 }

@@ -37,7 +37,7 @@ const InputPanel = () => {
       const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       actions.setSessionId(sessionId);
 
-      // Preparar datos para enviar
+      // Preparar datos para el flujo completo
       const requestData = {
         sessionId,
         text: state.inputText,
@@ -45,31 +45,67 @@ const InputPanel = () => {
         image: state.inputImage
       };
 
-      // Iniciar proceso de anonimización
-      await anonymizationService.processAnonymization(requestData, {
+      console.log('🚀 Iniciando flujo completo: Anonimización + Dual Streaming');
+
+      // FLUJO COMPLETO: /anonymize → Panel 1, /chat/streaming → Panel 2 + 3
+      await anonymizationService.processCompleteFlow(requestData, {
+        
+        // ===== CALLBACK PANEL 1: DATOS ANONIMIZADOS =====
         onAnonymized: (anonymizedData) => {
-          actions.setAnonymizedText(anonymizedData.text || anonymizedData.content);
+          actions.setAnonymizedText(anonymizedData.text);
+          console.log('✅ Panel 1 actualizado - Datos anonimizados');
+          console.log('🔍 PII detectado:', anonymizedData.pii_detected);
         },
+
+        // ===== CALLBACK INICIO STREAMING PANELES 2 + 3 =====
         onStreamStart: () => {
           actions.startStreaming();
+          console.log('🚀 Iniciando streaming para paneles 2 y 3');
         },
-        onStreamData: (chunk) => {
-          actions.updateStreamingText(chunk);
+
+        // ===== CALLBACK PANEL 2: RESPUESTA ANÓNIMA =====
+        onAnonymousChunk: (anonymousText) => {
+          actions.setModelResponse(anonymousText);
+          console.log('🤖 Panel 2 actualizado - Respuesta anónima');
         },
-        onStreamEnd: (finalResponse) => {
+
+        // ===== CALLBACK PANEL 3: RESPUESTA DESANONIMIZADA =====
+        onDeanonymizedChunk: (deanonymizedText) => {
+          actions.updateStreamingText(deanonymizedText);
+          console.log('✨ Panel 3 actualizado - Respuesta desanonimizada');
+        },
+
+        // ===== CALLBACK FIN DEL PROCESO =====
+        onStreamEnd: (result) => {
           actions.stopStreaming();
-          actions.setModelResponse(finalResponse);
+          
+          // Asegurar que todos los paneles tienen datos finales
+          if (result.anonymousResponse) {
+            actions.setModelResponse(result.anonymousResponse);
+          }
+          if (result.finalResponse) {
+            actions.setFinalResponse(result.finalResponse);
+          }
+
+          console.log('🎉 Flujo completo terminado:', {
+            panel1: true, // Siempre tendrá datos anonimizados
+            panel2: !!result.anonymousResponse,
+            panel3: !!result.finalResponse
+          });
         },
-        onDeanonymized: (deanonymizedResponse) => {
-          actions.setFinalResponse(deanonymizedResponse);
-        },
+
+        // ===== CALLBACK DE ERROR =====
         onError: (error) => {
+          console.error('❌ Error en flujo completo:', error);
           actions.setError(error.message);
+          actions.stopStreaming();
         }
       });
 
     } catch (error) {
+      console.error('❌ Error general en flujo:', error);
       actions.setError(`Error en el proceso: ${error.message}`);
+      actions.stopStreaming();
     } finally {
       actions.setLoading(false);
     }
@@ -78,17 +114,55 @@ const InputPanel = () => {
   const isDisabled = state.isLoading || state.isStreaming;
   const hasContent = state.inputText.trim() || state.inputFile || state.inputImage;
 
+  // Función para probar ambos endpoints (solo desarrollo)
+  const handleTestEndpoints = async () => {
+    try {
+      const results = await anonymizationService.testEndpoints();
+      console.log('🧪 Test de endpoints:', results);
+      
+      if (results.anonymize?.status === 'success' && results.streaming?.status === 'success') {
+        actions.clearError();
+        alert(`✅ Ambos endpoints funcionando
+        
+/anonymize: ✅ PII detectado: ${results.anonymize.pii_detected}
+/chat/streaming: ✅ Status: ${results.streaming.statusCode}
+
+Texto anonimizado: ${results.anonymize.anonymized}`);
+      } else {
+        actions.setError(`❌ Error en endpoints: ${results.error || 'Algún endpoint falló'}`);
+      }
+    } catch (error) {
+      actions.setError(`❌ Error probando endpoints: ${error.message}`);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
       {/* Header del panel */}
       <div className="bg-gradient-to-r from-brand-primary to-brand-secondary px-6 py-4">
-        <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
-          <FileText className="w-5 h-5" />
-          <span>Entrada de Datos</span>
-        </h2>
-        <p className="text-brand-light text-sm mt-1">
-          Introduce tu consulta, sube un archivo o una imagen para comenzar
-        </p>
+        <div className="flex justify-between items-start">
+          <div>
+            <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
+              <FileText className="w-5 h-5" />
+              <span>Entrada de Datos</span>
+            </h2>
+            <p className="text-brand-light text-sm mt-1">
+              Introduce tu consulta para ver el proceso completo: anonimización + comparación de respuestas IA
+            </p>
+          </div>
+          
+          {/* Botón de test solo en desarrollo */}
+          {process.env.NODE_ENV === 'development' && (
+            <Button
+              onClick={handleTestEndpoints}
+              variant="outline"
+              size="sm"
+              className="bg-white bg-opacity-20 border-white border-opacity-30 text-white hover:bg-opacity-30"
+            >
+              🧪 Test
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Tabs */}
@@ -142,8 +216,23 @@ const InputPanel = () => {
             />
             <div className="flex items-center text-xs text-gray-500">
               <AlertCircle className="w-4 h-4 mr-2" />
-              El sistema detectará automáticamente nombres, emails, teléfonos y otros datos personales
+              Verás 3 pasos: datos anonimizados → respuesta con datos falsos → respuesta con datos reales
             </div>
+            
+            {/* Indicadores de progreso */}
+            {state.isLoading && !state.isStreaming && (
+              <div className="flex items-center space-x-2 text-xs text-brand-primary bg-brand-light bg-opacity-20 px-3 py-2 rounded-lg">
+                <div className="animate-pulse w-2 h-2 bg-brand-primary rounded-full"></div>
+                <span>Anonimizando datos personales...</span>
+              </div>
+            )}
+            
+            {state.isStreaming && (
+              <div className="flex items-center space-x-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
+                <div className="animate-pulse w-2 h-2 bg-blue-600 rounded-full"></div>
+                <span>Comparando respuestas en tiempo real...</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -157,7 +246,8 @@ const InputPanel = () => {
               selectedFile={state.inputFile}
             />
             <div className="text-sm text-gray-600">
-              Formatos soportados: PDF, Word (.docx), Excel (.xlsx), Texto (.txt)
+              <AlertCircle className="w-4 h-4 inline mr-1 text-yellow-500" />
+              <strong>Nota:</strong> Los archivos aún no están soportados. Usa texto por ahora.
             </div>
           </div>
         )}
@@ -174,7 +264,8 @@ const InputPanel = () => {
               text="Seleccionar imagen o arrastrar aquí"
             />
             <div className="text-sm text-gray-600">
-              El sistema detectará y anonimizará caras y matrículas en la imagen
+              <AlertCircle className="w-4 h-4 inline mr-1 text-yellow-500" />
+              <strong>Nota:</strong> Las imágenes aún no están soportadas. Usa texto por ahora.
             </div>
           </div>
         )}
@@ -188,7 +279,11 @@ const InputPanel = () => {
             className="px-8 py-3"
           >
             <Send className="w-4 h-4 mr-2" />
-            {state.isLoading ? 'Procesando...' : 'Iniciar Anonimización'}
+            {state.isLoading && !state.isStreaming
+              ? 'Anonimizando...'
+              : state.isStreaming 
+                ? 'Comparando respuestas...' 
+                : 'Iniciar Proceso Completo'}
           </Button>
         </div>
 
@@ -197,6 +292,28 @@ const InputPanel = () => {
           <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-2">
             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
             <span className="text-red-700 text-sm">{state.error}</span>
+          </div>
+        )}
+
+        {/* Info del proceso para desarrollo */}
+        {process.env.NODE_ENV === 'development' && state.sessionId && (
+          <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+            <p className="text-xs text-gray-600">
+              <strong>Dev Info:</strong> Session ID: {state.sessionId}
+            </p>
+            <p className="text-xs text-gray-600">
+              Loading: {state.isLoading ? '🟢 Activo' : '🔴 Inactivo'} | 
+              Streaming: {state.isStreaming ? '🟢 Activo' : '🔴 Inactivo'}
+            </p>
+            <p className="text-xs text-gray-600">
+              Flujo: /anonymize → Panel 1, /chat/streaming → Panel 2+3
+            </p>
+            <p className="text-xs text-gray-600">
+              Paneles: 
+              {state.anonymizedText ? ' ✅P1' : ' ❌P1'} |
+              {state.modelResponse ? ' ✅P2' : ' ❌P2'} |
+              {state.finalResponse || state.streamingText ? ' ✅P3' : ' ❌P3'}
+            </p>
           </div>
         )}
       </div>

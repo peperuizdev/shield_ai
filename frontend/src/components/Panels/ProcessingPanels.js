@@ -1,5 +1,5 @@
 import React from 'react';
-import { EyeOff, Bot, CheckCircle, Copy, Download } from 'lucide-react';
+import { EyeOff, Bot, CheckCircle, Copy, Download, Zap } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import StreamingText from '../Common/StreamingText';
 import Button from '../Common/Button';
@@ -9,7 +9,7 @@ const ProcessingPanels = () => {
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
-    // Se podría agregar un toast notification aquí
+    // TODO: Agregar toast notification
   };
 
   const downloadText = (text, filename) => {
@@ -25,7 +25,7 @@ const ProcessingPanels = () => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       
-      {/* Panel 1: Texto Anonimizado */}
+      {/* Panel 1: Datos Anonimizados (Resultado del endpoint /anonymize) */}
       <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
         <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-4 py-3">
           <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
@@ -40,7 +40,7 @@ const ProcessingPanels = () => {
         <div className="p-4">
           {state.anonymizedText ? (
             <div className="space-y-3">
-              <div className="bg-gray-50 rounded-lg p-3 text-sm font-mono text-gray-700 min-h-32 max-h-48 overflow-y-auto">
+              <div className="bg-orange-50 rounded-lg p-3 text-sm font-mono text-gray-700 min-h-32 max-h-48 overflow-y-auto border-l-4 border-orange-400">
                 {state.anonymizedText}
               </div>
               <div className="flex space-x-2">
@@ -61,6 +61,10 @@ const ProcessingPanels = () => {
                   Descargar
                 </Button>
               </div>
+              <div className="flex items-center space-x-2 text-xs text-orange-600 bg-orange-50 px-3 py-2 rounded-lg">
+                <CheckCircle className="w-4 h-4" />
+                <span>Datos personales protegidos</span>
+              </div>
             </div>
           ) : (
             <div className="flex items-center justify-center h-32 text-gray-400">
@@ -73,12 +77,15 @@ const ProcessingPanels = () => {
         </div>
       </div>
 
-      {/* Panel 2: Respuesta del Modelo */}
+      {/* Panel 2: Respuesta Anónima (Stream 1 del endpoint /chat/streaming) */}
       <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
         <div className="bg-gradient-to-r from-brand-primary to-brand-secondary px-4 py-3">
           <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
             <Bot className="w-4 h-4" />
             <span>Respuesta del Modelo IA</span>
+            {state.isStreaming && state.modelResponse && (
+              <Zap className="w-3 h-3 animate-pulse text-yellow-300" />
+            )}
           </h3>
           <p className="text-brand-light text-xs mt-1">
             Respuesta con datos anonimizados
@@ -86,10 +93,13 @@ const ProcessingPanels = () => {
         </div>
         
         <div className="p-4">
-          {state.isStreaming ? (
+          {state.isStreaming && !state.modelResponse ? (
             <div className="space-y-3">
               <div className="bg-gray-50 rounded-lg p-3 min-h-32 max-h-48 overflow-y-auto">
-                <StreamingText text={state.streamingText} />
+                <div className="flex items-center space-x-2 text-gray-500">
+                  <Bot className="w-4 h-4 animate-pulse" />
+                  <span className="text-sm">La IA está pensando...</span>
+                </div>
               </div>
               <div className="flex items-center space-x-2 text-xs text-gray-500">
                 <div className="animate-pulse w-2 h-2 bg-brand-primary rounded-full"></div>
@@ -119,6 +129,12 @@ const ProcessingPanels = () => {
                   Descargar
                 </Button>
               </div>
+              {!state.isStreaming && (
+                <div className="flex items-center space-x-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
+                  <CheckCircle className="w-4 h-4" />
+                  <span>Respuesta completada</span>
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex items-center justify-center h-32 text-gray-400">
@@ -131,12 +147,15 @@ const ProcessingPanels = () => {
         </div>
       </div>
 
-      {/* Panel 3: Respuesta Final Desanonimizada */}
+      {/* Panel 3: Respuesta Desanonimizada (Stream 2 del endpoint /chat/streaming) */}
       <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
         <div className="bg-gradient-to-r from-green-500 to-green-600 px-4 py-3">
           <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
             <CheckCircle className="w-4 h-4" />
             <span>Respuesta Final</span>
+            {state.isStreaming && (
+              <Zap className="w-3 h-3 animate-pulse text-yellow-300" />
+            )}
           </h3>
           <p className="text-green-100 text-xs mt-1">
             Datos restaurados para el usuario
@@ -144,7 +163,24 @@ const ProcessingPanels = () => {
         </div>
         
         <div className="p-4">
-          {state.finalResponse ? (
+          {state.isStreaming ? (
+            <div className="space-y-3">
+              <div className="bg-green-50 rounded-lg p-3 min-h-32 max-h-48 overflow-y-auto border-l-4 border-green-400">
+                {state.streamingText ? (
+                  <StreamingText text={state.streamingText} speed={30} />
+                ) : (
+                  <div className="flex items-center space-x-2 text-green-600">
+                    <CheckCircle className="w-4 h-4 animate-pulse" />
+                    <span className="text-sm">Restaurando datos originales...</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center space-x-2 text-xs text-green-600 bg-green-50 px-3 py-2 rounded-lg">
+                <div className="animate-pulse w-2 h-2 bg-green-600 rounded-full"></div>
+                <span>Desanonimizando en tiempo real...</span>
+              </div>
+            </div>
+          ) : state.finalResponse ? (
             <div className="space-y-3">
               <div className="bg-green-50 rounded-lg p-3 text-sm text-gray-700 min-h-32 max-h-48 overflow-y-auto whitespace-pre-wrap border-l-4 border-green-400">
                 {state.finalResponse}
