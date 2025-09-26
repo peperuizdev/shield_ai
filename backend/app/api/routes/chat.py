@@ -290,6 +290,15 @@ async def chat_stream_propuesta(request: ChatRequest):
             llm_prompt = f"Actúa como un asistente útil y responde de manera clara y completa a la siguiente consulta: {anonymized_text}"
         
         logger.info(f"🔍 DATOS ENVIADOS AL LLM: '{anonymized_text[:100]}...' (sesión: {session_id})")
+        
+        # ===== PASO 4.5: GUARDAR TEXTO ANONIMIZADO (REQUEST AL LLM) EN REDIS =====
+        try:
+            from services.session_manager import store_anonymized_request
+            store_anonymized_request(session_id, anonymized_text)
+            logger.info(f"💾 TEXTO ANONIMIZADO guardado para sesión {session_id}")
+        except Exception as e:
+            logger.warning(f"No se pudo guardar texto anonimizado: {e}")
+        
         logger.info("Obteniendo respuesta del LLM para streaming...")
         llm_response = llm_client.call_grok(llm_prompt)
         
