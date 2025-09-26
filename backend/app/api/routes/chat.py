@@ -287,9 +287,29 @@ async def chat_stream_propuesta(request: ChatRequest):
         if request.llm_prompt_template:
             llm_prompt = request.llm_prompt_template.format(text=anonymized_text)
         else:
-            llm_prompt = f"Actúa como un asistente útil y responde de manera clara y completa a la siguiente consulta: {anonymized_text}"
+            # Prompt ultra-directo para forzar uso de nombres exactos
+            if mapping and pii_detected:
+                # Extraer nombres del texto anonimizado
+                import re
+                names_in_text = []
+                for fake_name in mapping.keys():
+                    if fake_name in anonymized_text:
+                        names_in_text.append(fake_name)
+                
+                if names_in_text:
+                    names_str = ', '.join(f'"{name}"' for name in names_in_text)
+                    llm_prompt = f"""SYSTEM: Eres un asistente. INSTRUCCIÓN OBLIGATORIA: En tu respuesta usa únicamente estos nombres exactos: {names_str}. No uses ningún otro nombre.
+
+USER: {anonymized_text}
+
+Responde usando SOLO los nombres que aparecen en la consulta."""
+                else:
+                    llm_prompt = f"SYSTEM: Eres un asistente útil.\n\nUSER: {anonymized_text}"
+            else:
+                llm_prompt = f"Actúa como un asistente útil y responde de manera clara y completa a la siguiente consulta: {anonymized_text}"
         
-        logger.info(f"🔍 DATOS ENVIADOS AL LLM: '{anonymized_text[:100]}...' (sesión: {session_id})")
+        logger.info(f"🔍 TEXTO ANONIMIZADO: '{anonymized_text}' (sesión: {session_id})")
+        logger.info(f"🔍 PROMPT COMPLETO ENVIADO AL LLM: '{llm_prompt}'")
         
         # ===== PASO 4.5: GUARDAR TEXTO ANONIMIZADO (REQUEST AL LLM) EN REDIS =====
         try:
@@ -299,27 +319,19 @@ async def chat_stream_propuesta(request: ChatRequest):
         except Exception as e:
             logger.warning(f"No se pudo guardar texto anonimizado: {e}")
         
-        logger.info("Obteniendo respuesta del LLM para streaming...")
-        llm_response = llm_client.call_grok(llm_prompt)
-        
-        # ===== PASO 5: GUARDAR RESPUESTA DEL LLM EN REDIS PARA STREAMING =====
-        try:
-            from services.session_manager import store_llm_response
-            store_llm_response(session_id, llm_response)
-            logger.info("Respuesta del LLM guardada para streaming")
-        except Exception as e:
-            logger.warning(f"No se pudo guardar respuesta del LLM: {e}")
-        
-        # ===== PASO 6: GENERAR STREAMING DUAL =====
-        from services.deanonymization_service import generate_chat_dual_stream
+        # ===== PASO 5: INICIAR STREAMING REAL-TIME CON DEANONYMIZACIÓN EN VIVO =====
+        logger.info("🚀 Iniciando streaming REAL-TIME del LLM con deanonymización en vivo...")
+        from services.deanonymization_service import generate_real_time_dual_stream
         
         return StreamingResponse(
-            generate_chat_dual_stream(session_id, llm_response, mapping),
+            generate_real_time_dual_stream(session_id, llm_prompt, mapping, llm_client),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
-                "Content-Type": "text/event-stream"
+                "Content-Type": "text/event-stream",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Headers": "Content-Type"
             }
         )
         

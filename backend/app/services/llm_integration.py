@@ -4,7 +4,8 @@ import sys
 import json
 import time
 import ssl
-from typing import Dict, Any, Optional, List
+import asyncio
+from typing import Dict, Any, Optional, List, AsyncGenerator
 import requests
 import logging
 from requests.adapters import HTTPAdapter
@@ -272,6 +273,160 @@ class LLMClientPropuesta:
         
         logger.error("Todos los intentos con Groq fallaron")
         return f"[ERROR: No se pudo procesar con Groq después de {self.max_retries} intentos. Prompt: {prompt[:100]}...]"
+
+    async def call_grok_stream(self, prompt: str, model: str = None, max_tokens: int = 500, temperature: float = 0.7):
+        """
+        Llama a la API de Groq con streaming real usando Server-Sent Events.
+        
+        Args:
+            prompt: Texto a enviar al modelo
+            model: Modelo específico a usar (opcional)
+            max_tokens: Máximo número de tokens en respuesta
+            temperature: Creatividad del modelo (0.0 - 1.0)
+            
+        Yields:
+            str: Cada chunk/token de texto que viene del modelo en tiempo real
+        """
+        if not self.api_key:
+            yield "[ERROR: GROK_API_KEY no configurada]"
+            return
+            
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        # Check if prompt contains system instructions (starts with special format)
+        if prompt.startswith("SYSTEM:"):
+            parts = prompt.split("USER:", 1)
+            system_content = parts[0].replace("SYSTEM:", "").strip()
+            user_content = parts[1].strip() if len(parts) > 1 else ""
+            
+            messages = [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content}
+            ]
+        else:
+            messages = [{"role": "user", "content": prompt}]
+
+        payload = {
+            "model": model or self.model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True  # ← ACTIVAR STREAMING REAL
+        }
+
+        for attempt in range(self.max_retries):
+            try:
+                logger.info(f"Enviando streaming request a Groq (intento {attempt + 1}/{self.max_retries})")
+                
+                # Usar stream=True para obtener respuesta en chunks
+                response = self.session.post(
+                    self.endpoint, 
+                    headers=headers, 
+                    json=payload, 
+                    timeout=30,
+                    stream=True  # ← STREAMING HTTP
+                )
+                
+                response.raise_for_status()
+                logger.info(f"Streaming response status: {response.status_code}")
+                
+                # Procesar líneas SSE en tiempo real
+                for line in response.iter_lines():
+                    if line:
+                        line_text = line.decode('utf-8').strip()
+                        
+                        # Formato SSE: "data: {json}"
+                        if line_text.startswith('data: '):
+                            data_json = line_text[6:]  # Remover "data: "
+                            
+                            # Fin del stream
+                            if data_json.strip() == '[DONE]':
+                                logger.info("Stream completado correctamente")
+                                return
+                            
+                            try:
+                                data = json.loads(data_json)
+                                
+                                # Extraer contenido del chunk
+                                if 'choices' in data and len(data['choices']) > 0:
+                                    choice = data['choices'][0]
+                                    if 'delta' in choice and 'content' in choice['delta']:
+                                        chunk_content = choice['delta']['content']
+                                        if chunk_content:
+                                            yield chunk_content
+                                            
+                            except json.JSONDecodeError:
+                                # Ignorar líneas que no son JSON válido
+                                continue
+                            except KeyError:
+                                # Ignorar chunks sin contenido
+                                continue
+                
+                # Si llegamos aquí, el stream terminó correctamente
+                return
+                
+            except requests.exceptions.Timeout:
+                logger.warning(f"Timeout en streaming intento {attempt+1}")
+                if attempt == self.max_retries - 1:
+                    yield "[ERROR: Timeout - Groq no respondió en 30 segundos]"
+                    return
+                    
+            except requests.exceptions.HTTPError as e:
+                logger.warning(f"HTTP Error en streaming intento {attempt+1}: {e}")
+                if e.response.status_code == 401:
+                    yield "[ERROR: API Key inválida o sin permisos]"
+                    return
+                elif e.response.status_code == 429:
+                    logger.warning("Rate limit alcanzado en streaming, esperando...")
+                    time.sleep(2 ** (attempt + 2))
+                    continue
+                    
+            except requests.exceptions.ConnectionError:
+                logger.warning(f"Error de conexión en streaming intento {attempt+1}")
+                if attempt == self.max_retries - 1:
+                    yield "[ERROR: No se puede conectar a Groq API para streaming]"
+                    return
+                    
+            except Exception as e:
+                logger.warning(f"Error inesperado en streaming intento {attempt+1}: {type(e).__name__}: {e}")
+                
+            # Backoff exponencial entre intentos
+            if attempt < self.max_retries - 1:
+                wait_time = 2 ** attempt
+                logger.info(f"Esperando {wait_time}s antes del siguiente intento de streaming...")
+                time.sleep(wait_time)
+        
+        logger.error("Todos los intentos de streaming con Groq fallaron")
+        yield f"[ERROR: No se pudo hacer streaming con Groq después de {self.max_retries} intentos]"
+
+    def deanonymize_chunk(self, chunk: str, mapping: Dict[str, str]) -> str:
+        """
+        Deanonymiza un chunk de texto aplicando el mapping de entidades.
+        Optimizado para procesar chunks pequeños en tiempo real.
+        
+        Args:
+            chunk: Fragmento de texto a deanonymizar
+            mapping: Diccionario {valor_falso: valor_real}
+        
+        Returns:
+            str: Chunk deanonymizado
+        """
+        if not mapping or not chunk:
+            return chunk
+            
+        deanonymized = chunk
+        
+        # Ordenar por longitud descendente para evitar reemplazos parciales
+        sorted_mapping = sorted(mapping.items(), key=lambda x: len(x[0]), reverse=True)
+        
+        for fake_value, real_value in sorted_mapping:
+            if fake_value in deanonymized:
+                deanonymized = deanonymized.replace(fake_value, real_value)
+                
+        return deanonymized
 
     def test_connection(self) -> Dict[str, Any]:
         """
