@@ -345,8 +345,30 @@ def collect_hf_matches(text: str, hf_model: str):
         end = e.get('end')
         if start is None or end is None:
             continue
+        
+        orig_text = text[start:end]
+        
+        # FILTRAR ENTIDADES DETECTADAS POR HF QUE SEAN DEMASIADO PEQUEÑAS
+        # Evitar fragmentos como 'ju', '+', 'garcia' (parte de email)
+        if len(orig_text.strip()) < 3:
+            continue
+        
+        # Evitar detectar solo símbolos o números cortos
+        if orig_text.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?']:
+            continue
+        
+        # Evitar fragmentos que parezcan parte de emails o URLs
+        if '@' in text[max(0, start-10):min(len(text), end+10)]:
+            # Si está cerca de un @, probablemente es parte de un email
+            continue
+        
+        # Solo procesar si parece una entidad válida
+        score = e.get('score', 0)
+        if score < 0.8:  # Solo entidades con alta confianza
+            continue
+        
         label = _normalize_hf_label(e.get('entity_group') or e.get('entity'))
-        matches.append({'start': start, 'end': end, 'label': label, 'orig': text[start:end], 'source': 'hf'})
+        matches.append({'start': start, 'end': end, 'label': label, 'orig': orig_text, 'source': 'hf'})
     return matches
 
 
@@ -355,7 +377,29 @@ def collect_regex_matches(text: str):
     matches = []
     for label, pat in patterns.items():
         for m in re.finditer(pat, text):
-            matches.append({'start': m.start(), 'end': m.end(), 'label': label, 'orig': text[m.start():m.end()], 'source': 'regex'})
+            orig = text[m.start():m.end()]
+            
+            # FILTRAR MATCHES REGEX DEMASIADO PEQUEÑOS O INVÁLIDOS
+            if len(orig.strip()) < 2:
+                continue
+            
+            # Evitar símbolos sueltos
+            if orig.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?', '@']:
+                continue
+            
+            # Para emails, verificar que sea un email válido completo
+            if label == 'EMAIL':
+                # Debe tener @ y un dominio válido
+                if not '@' in orig or '.' not in orig.split('@')[-1]:
+                    continue
+            
+            # Para teléfonos, debe tener al menos 7 dígitos
+            if label == 'PHONE':
+                digits = re.sub(r'[^\d]', '', orig)
+                if len(digits) < 7:
+                    continue
+            
+            matches.append({'start': m.start(), 'end': m.end(), 'label': label, 'orig': orig, 'source': 'regex'})
     return matches
 
 
@@ -363,8 +407,25 @@ def resolve_matches(hf_matches, regex_matches):
     REGEX_ALWAYS = {'EMAIL', 'PHONE', 'CARD', 'IBAN', 'IP', 'BIOMETRIC', 'CREDENTIALS', 'COMBO'}
     SYNERGY = {'ID', 'DOB'}
 
-    hf_intervals = []
+    # FILTRO FINAL: Eliminar matches inválidos antes del procesamiento
+    filtered_hf = []
     for h in hf_matches:
+        orig = h.get('orig', '')
+        # Filtrar entidades demasiado pequeñas o que son solo símbolos
+        if len(orig.strip()) < 2 or orig.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?']:
+            continue
+        filtered_hf.append(h)
+    
+    filtered_regex = []
+    for r in regex_matches:
+        orig = r.get('orig', '')
+        # Aplicar el mismo filtro a regex matches
+        if len(orig.strip()) < 2 or orig.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?']:
+            continue
+        filtered_regex.append(r)
+
+    hf_intervals = []
+    for h in filtered_hf:
         hf_intervals.append((h['start'], h['end'], h))
 
     def overlaps_with_hf(r):
@@ -374,10 +435,10 @@ def resolve_matches(hf_matches, regex_matches):
         return None
 
     chosen = []
-    for h in hf_matches:
+    for h in filtered_hf:
         chosen.append(h)
 
-    for r in regex_matches:
+    for r in filtered_regex:
         rlab = r['label'].upper()
         r['label'] = rlab
         h = overlaps_with_hf(r)
@@ -431,17 +492,48 @@ def generate_realistic_fake_data(label: str, original_value: str) -> str:
         label_upper = label.upper()
         
         if label_upper in ('PERSON', 'PER'):
-            return fake.name()
+            # Generar nombre simple: solo nombre + apellido
+            return f"{fake.first_name()} {fake.last_name()}"
         elif label_upper in ('LOCATION', 'LOC'):
             return fake.city()
         elif label_upper == 'ORG':
             return fake.company()
         elif '@' in original_value:  # Email detectado por regex
-            return fake.email()
+            # Generar email simple usando nombres EN INGLÉS para evitar acentos y complejidad
+            try:
+                # Crear instancia temporal de Faker en inglés solo para emails
+                from faker import Faker
+                fake_en = Faker('en_US')
+                
+                first = fake_en.first_name().lower()
+                last = fake_en.last_name().lower()
+                
+                # Mantener el dominio original para coherencia
+                domain = original_value.split('@')[1] if '@' in original_value else 'gmail.com'
+                
+                # Limpiar caracteres especiales de nombres (solo alfanuméricos)
+                first = ''.join(c for c in first if c.isalnum())[:8]  # Máximo 8 caracteres
+                last = ''.join(c for c in last if c.isalnum())[:8]   # Máximo 8 caracteres
+                
+                # Validar que los nombres no estén vacíos
+                if not first or not last:
+                    return f"user{fake.random_int(100, 999)}@{domain}"
+                
+                return f"{first}.{last}@{domain}"
+            except Exception:
+                # Fallback seguro
+                domain = 'gmail.com'
+                try:
+                    domain = original_value.split('@')[1]
+                except:
+                    pass
+                return f"user{fake.random_int(100, 999)}@{domain}"
         elif any(char.isdigit() for char in original_value) and ('+' in original_value or len(original_value.replace(' ', '')) >= 9):  # Teléfono
-            return fake.phone_number()
+            # Generar teléfono simple sin nombres complejos
+            return f"+34 {fake.random_int(600, 699)} {fake.random_int(100, 999)} {fake.random_int(100, 999)}"
         elif label_upper in ('PHONE', 'TEL'):
-            return fake.phone_number()
+            # Generar teléfono simple sin nombres complejos
+            return f"+34 {fake.random_int(600, 699)} {fake.random_int(100, 999)} {fake.random_int(100, 999)}"
         elif label_upper in ('CARD', 'CREDIT'):
             return fake.credit_card_number()
         elif label_upper == 'IBAN':
@@ -451,8 +543,11 @@ def generate_realistic_fake_data(label: str, original_value: str) -> str:
         elif label_upper == 'ID':
             return fake.bothify(text='########?').upper()
         else:
-            # Para otros tipos, generar nombre genérico
-            return f"{fake.first_name()}_{fake.random_int(10, 99)}"
+            # Para otros tipos, generar identificador simple
+            first = fake.first_name()
+            # Limpiar y simplificar nombre
+            clean_name = ''.join(c for c in first if c.isalnum())[:6]
+            return f"{clean_name}_{fake.random_int(10, 99)}"
             
     except Exception:
         # En caso de error, usar fallback
@@ -468,6 +563,23 @@ def apply_replacements_from_matches(original_text: str, matches: List[Dict], use
         label = m['label']
         src = m.get('source', 'regex')
         orig = original_text[start:end]
+        
+        # FILTRAR ENTIDADES PEQUEÑAS O INVÁLIDAS
+        # Evitar procesar fragmentos como '+', 'ju', etc.
+        if len(orig.strip()) < 2:
+            continue
+        
+        # Evitar procesar solo caracteres especiales
+        if orig.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}']:
+            continue
+        
+        # Para entidades HF, validar que sean palabras completas
+        if src == 'hf' and len(orig.strip()) < 3:
+            continue
+        
+        # Evitar fragmentos que solo contengan números o símbolos
+        if orig.strip().isdigit() and len(orig.strip()) < 4:
+            continue
         is_date_like = False
         if DATEUTIL_AVAILABLE:
             try:
