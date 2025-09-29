@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 
 from services.document_processing.factory import process_document
 from services.document_processing.base import DocumentProcessingError, DocumentValidationError
+from services.session_manager import get_anonymization_map
 
 router = APIRouter(prefix="/document", tags=["Document Processing"])
 logger = logging.getLogger(__name__)
@@ -53,14 +54,12 @@ async def process_document_endpoint(
     try:
         logger.info(f"Processing document: {file.filename}")
         
-        # Validate file
         if not file.filename:
             raise HTTPException(
                 status_code=400,
                 detail="No filename provided"
             )
         
-        # Read file content
         file_content = await file.read()
         
         if len(file_content) == 0:
@@ -69,7 +68,6 @@ async def process_document_endpoint(
                 detail="Empty file uploaded"
             )
         
-        # Step 1: Extract text using document processing system
         try:
             extraction_result = process_document(
                 file_content=file_content,
@@ -90,9 +88,7 @@ async def process_document_endpoint(
                 detail=f"Document processing failed: {str(e)}"
             )
         
-        # Step 2: Apply PII detection and anonymization
         try:
-            # Import PII detection service
             from services.pii_detector import run_pipeline
             
             anonymization_result = run_pipeline(
@@ -100,7 +96,7 @@ async def process_document_endpoint(
                 text=extracted_text,
                 use_regex=use_regex,
                 pseudonymize=pseudonymize,
-                save_mapping=False,  # We'll handle mapping storage separately
+                save_mapping=False,
                 use_realistic_fake=use_realistic_fake
             )
             
@@ -117,7 +113,6 @@ async def process_document_endpoint(
                 detail=f"PII anonymization failed: {str(e)}"
             )
         
-        # Step 3: Save anonymization mapping if requested
         if save_mapping and session_id and pii_mapping:
             try:
                 from services.session_manager import store_anonymization_map
@@ -125,9 +120,7 @@ async def process_document_endpoint(
                 logger.info(f"Anonymization mapping saved for session: {session_id}")
             except Exception as e:
                 logger.warning(f"Failed to save anonymization mapping: {str(e)}")
-                # Don't fail the request if mapping storage fails
         
-        # Step 4: Prepare response (simplified - focus on anonymized text)
         response_data = {
             "success": True,
             "anonymized_text": anonymized_text,
@@ -151,4 +144,88 @@ async def process_document_endpoint(
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
+        )
+
+
+@router.get("/mapping/{session_id}")
+async def get_document_mapping(session_id: str):
+    """
+    Retrieve the complete anonymization mapping for a processed document.
+    
+    Args:
+        session_id (str): Session identifier
+        
+    Returns:
+        JSON with the complete mapping of original to anonymized data
+        
+    Raises:
+        HTTPException: If session not found
+    """
+    try:
+        logger.info(f"Retrieving mapping for session: {session_id}")
+        
+        mapping = get_anonymization_map(session_id)
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "mapping": mapping,
+            "entities_count": len(mapping)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving mapping for session {session_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve mapping: {str(e)}"
+        )
+
+
+@router.post("/deanonymize")
+async def deanonymize_document(
+    session_id: str = Form(...),
+    anonymized_text: str = Form(...)
+):
+    """
+    Deanonymize text from a processed document using stored mapping.
+    
+    Args:
+        session_id (str): Session identifier
+        anonymized_text (str): Text with fake data to restore
+        
+    Returns:
+        JSON with original text restored
+        
+    Raises:
+        HTTPException: If session not found or deanonymization fails
+    """
+    try:
+        logger.info(f"Deanonymizing document for session: {session_id}")
+        
+        mapping = get_anonymization_map(session_id)
+        
+        from services.deanonymization_service import create_reverse_map, deanonymize_text
+        
+        reverse_map = create_reverse_map(mapping)
+        original_text = deanonymize_text(anonymized_text, reverse_map)
+        
+        logger.info(f"Document deanonymization completed for session: {session_id}")
+        
+        return {
+            "success": True,
+            "session_id": session_id,
+            "original_text": original_text,
+            "anonymized_text": anonymized_text,
+            "entities_restored": len(reverse_map)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deanonymizing document for session {session_id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to deanonymize document: {str(e)}"
         )
