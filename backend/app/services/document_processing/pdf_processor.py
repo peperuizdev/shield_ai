@@ -63,7 +63,6 @@ class PDFProcessor(DocumentProcessor):
                         if page_text and page_text.strip():
                             extracted_text += page_text + "\n\n"
                         else:
-                            # Try extracting tables if no text found
                             tables = page.extract_tables()
                             if tables:
                                 for table in tables:
@@ -115,16 +114,8 @@ class PDFProcessor(DocumentProcessor):
                 if len(pdf.pages) == 0:
                     raise DocumentValidationError("PDF contains no pages")
                 
-                # Test if we can read first page
                 first_page = pdf.pages[0]
                 test_text = first_page.extract_text()
-                
-                # Check if PDF is encrypted and try to decrypt
-                if hasattr(pdf.pdf, 'is_encrypted') and pdf.pdf.is_encrypted:
-                    try:
-                        pdf.pdf.decrypt("")
-                    except:
-                        raise DocumentValidationError("PDF is password-protected")
             
             self.logger.info(f"PDF validation successful: {filename}")
             return True
@@ -173,7 +164,6 @@ class PDFProcessor(DocumentProcessor):
                     "file_size": len(file_content)
                 })
                 
-                # Extract PDF document info if available
                 if hasattr(pdf.pdf, 'info') and pdf.pdf.info:
                     info = pdf.pdf.info[0]
                     
