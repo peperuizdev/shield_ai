@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from services.document_processing.factory import process_document
 from services.document_processing.base import DocumentProcessingError, DocumentValidationError
 from services.session_manager import get_anonymization_map
+from utils.helpers import generate_session_id
 
 router = APIRouter(prefix="/document", tags=["Document Processing"])
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ async def process_document_endpoint(
     This endpoint:
     1. Extracts text from PDF, Word, or Excel files
     2. Applies PII detection and anonymization
-    3. Returns only anonymized plain text (no formatting)
+    3. Returns anonymized text with mapping
     
     Args:
         file (UploadFile): Document file to process (PDF, Word, Excel)
@@ -59,6 +60,10 @@ async def process_document_endpoint(
                 status_code=400,
                 detail="No filename provided"
             )
+        
+        if not session_id or session_id.strip() == "" or session_id == "string":
+            session_id = generate_session_id(prefix="chat")
+            logger.info(f"Auto-generated session_id: {session_id}")
         
         file_content = await file.read()
         
@@ -127,6 +132,7 @@ async def process_document_endpoint(
             "session_id": session_id,
             "pii_detected": bool(pii_mapping),
             "entities_anonymized": len(pii_mapping),
+            "mapping": pii_mapping,
             "document_info": {
                 "filename": file.filename,
                 "processor_used": processing_info.get('processor_used', 'unknown'),
