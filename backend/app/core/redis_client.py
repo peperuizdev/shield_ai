@@ -137,11 +137,42 @@ class RedisClient:
             # Get connection pool info
             if self._connection_pool:
                 pool_info = {
-                    "max_connections": self._connection_pool.max_connections,
-                    "created_connections": len(self._connection_pool._created_connections),
-                    "available_connections": len(self._connection_pool._available_connections),
-                    "in_use_connections": len(self._connection_pool._in_use_connections)
+                    "max_connections": getattr(self._connection_pool, 'max_connections', 'unknown')
                 }
+                
+                try:
+                    created_connections = getattr(self._connection_pool, '_created_connections', None)
+                    if hasattr(created_connections, '__len__'):
+                        pool_info["created_connections"] = len(created_connections)
+                    elif isinstance(created_connections, int):
+                        pool_info["created_connections"] = created_connections
+                    else:
+                        pool_info["created_connections"] = "unknown"
+                except (AttributeError, TypeError):
+                    pool_info["created_connections"] = "unknown"
+                
+                try:
+                    available_connections = getattr(self._connection_pool, '_available_connections', None)
+                    if hasattr(available_connections, '__len__'):
+                        pool_info["available_connections"] = len(available_connections)
+                    elif isinstance(available_connections, int):
+                        pool_info["available_connections"] = available_connections
+                    else:
+                        pool_info["available_connections"] = "unknown"
+                except (AttributeError, TypeError):
+                    pool_info["available_connections"] = "unknown"
+                
+                try:
+                    in_use_connections = getattr(self._connection_pool, '_in_use_connections', None)
+                    if hasattr(in_use_connections, '__len__'):
+                        pool_info["in_use_connections"] = len(in_use_connections)
+                    elif isinstance(in_use_connections, int):
+                        pool_info["in_use_connections"] = in_use_connections
+                    else:
+                        pool_info["in_use_connections"] = "unknown"
+                except (AttributeError, TypeError):
+                    pool_info["in_use_connections"] = "unknown"
+                
                 health_info["connection_pool_info"] = pool_info
             
             # Test basic operations
