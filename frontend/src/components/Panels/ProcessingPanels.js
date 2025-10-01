@@ -1,7 +1,6 @@
 import React from 'react';
 import { EyeOff, Bot, CheckCircle, Copy, Download, Zap } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
-import StreamingText from '../Common/StreamingText';
 import Button from '../Common/Button';
 
 const ProcessingPanels = () => {
@@ -39,7 +38,7 @@ const ProcessingPanels = () => {
         <div className="p-4">
           {state.anonymizedText ? (
             <div className="space-y-3">
-              <div className="bg-orange-50 rounded-lg p-3 text-sm font-mono text-gray-700 min-h-32 max-h-48 overflow-y-auto border-l-4 border-orange-400">
+              <div className="bg-orange-50 rounded-lg p-3 text-sm font-mono text-gray-700 min-h-32 max-h-48 overflow-y-auto border-l-4 border-orange-400 whitespace-pre-wrap">
                 {state.anonymizedText}
               </div>
               <div className="flex space-x-2">
@@ -128,7 +127,12 @@ const ProcessingPanels = () => {
                   Descargar
                 </Button>
               </div>
-              {!state.isStreaming && (
+              {state.isStreaming ? (
+                <div className="flex items-center space-x-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
+                  <div className="animate-pulse w-2 h-2 bg-blue-600 rounded-full"></div>
+                  <span>Streaming en curso...</span>
+                </div>
+              ) : (
                 <div className="flex items-center space-x-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
                   <CheckCircle className="w-4 h-4" />
                   <span>Respuesta completada</span>
@@ -146,13 +150,13 @@ const ProcessingPanels = () => {
         </div>
       </div>
 
-      {/* Panel 3: Respuesta Desanonimizada */}
+      {/* Panel 3: Respuesta Desanonimizada*/}
       <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
         <div className="bg-gradient-to-r from-green-500 to-green-600 px-4 py-3">
           <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
             <CheckCircle className="w-4 h-4" />
             <span>Respuesta Final</span>
-            {state.isStreaming && (
+            {state.isStreaming && state.streamingText && (
               <Zap className="w-3 h-3 animate-pulse text-yellow-300" />
             )}
           </h3>
@@ -166,7 +170,9 @@ const ProcessingPanels = () => {
             <div className="space-y-3">
               <div className="bg-green-50 rounded-lg p-3 min-h-32 max-h-48 overflow-y-auto border-l-4 border-green-400">
                 {state.streamingText ? (
-                  <StreamingText text={state.streamingText} speed={30} />
+                  <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                    {state.streamingText}
+                  </div>
                 ) : (
                   <div className="flex items-center space-x-2 text-green-600">
                     <CheckCircle className="w-4 h-4 animate-pulse" />

@@ -1,60 +1,25 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Send, Paperclip, Image as ImageIcon, FileText, AlertCircle, X, File } from 'lucide-react';
+import React, { useState } from 'react';
+import { Send, Upload, Image as ImageIcon, FileText, AlertCircle } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { anonymizationService } from '../../services/anonymizationService';
 import Button from '../Common/Button';
+import TextArea from '../Common/TextArea';
+import FileUpload from '../Common/FileUpload';
 
 const InputPanel = () => {
   const { state, actions } = useApp();
-  const fileInputRef = useRef(null);
-  const imageInputRef = useRef(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [activeTab, setActiveTab] = useState('text');
 
-  const handleTextChange = (e) => {
-    actions.setInputText(e.target.value);
+  const handleTextChange = (value) => {
+    actions.setInputText(value);
   };
 
-  // Generar preview cuando se sube una imagen
-  useEffect(() => {
-    if (state.inputImage) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setImagePreview(reader.result);
-      };
-      reader.readAsDataURL(state.inputImage);
-    } else {
-      setImagePreview(null);
-    }
-  }, [state.inputImage]);
-
-  const handleFileSelect = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      if (state.inputImage) {
-        actions.setInputImage(null);
-      }
-      actions.setInputFile(file);
-    }
-    // Reset input para permitir seleccionar el mismo archivo
-    event.target.value = '';
+  const handleFileUpload = (file) => {
+    actions.setInputFile(file);
   };
 
-  const handleImageSelect = (event) => {
-    const image = event.target.files[0];
-    if (image) {
-      if (state.inputFile) {
-        actions.setInputFile(null);
-      }
-      actions.setInputImage(image);
-    }
-    // Reset input para permitir seleccionar la misma imagen
-    event.target.value = '';
-  };
-
-  const handleRemoveAttachment = () => {
-    actions.setInputFile(null);
-    actions.setInputImage(null);
-    setImagePreview(null);
+  const handleImageUpload = (image) => {
+    actions.setInputImage(image);
   };
 
   const handleSubmit = async () => {
@@ -78,35 +43,41 @@ const InputPanel = () => {
         image: state.inputImage
       };
 
-      console.log('🚀 Iniciando flujo completo: Anonimización + Dual Streaming');
+      console.log('🚀 Iniciando flujo completo: Streaming dual + Panel 1 al detectar metadata');
 
       await anonymizationService.processCompleteFlow(requestData, {
-        onAnonymized: (anonymizedData) => {
-          actions.setAnonymizedText(anonymizedData.text);
-          console.log('✅ Panel 1 actualizado - Datos anonimizados');
-        },
-
+  
         onStreamStart: () => {
           actions.startStreaming();
-          console.log('🚀 Iniciando streaming para paneles 2 y 3');
+          console.log('🚀 Streaming iniciado - Paneles 2 y 3');
         },
 
         onAnonymousChunk: (anonymousText) => {
-          actions.setModelResponse(anonymousText);
+          actions.setModelResponse(anonymousText);  // ← Panel 2
+          console.log('🤖 Panel 2 actualizado (streaming)');
         },
 
         onDeanonymizedChunk: (deanonymizedText) => {
-          actions.updateStreamingText(deanonymizedText);
+          actions.updateStreamingText(deanonymizedText);  // ← Panel 3
+          console.log('✨ Panel 3 actualizado (streaming)');
+        },
+
+        onAnonymized: (anonymizedData) => {
+          actions.setAnonymizedText(anonymizedData.text);
+          console.log('✅ Panel 1 actualizado - Texto anonimizado cargado');
         },
 
         onStreamEnd: (result) => {
           actions.stopStreaming();
+          
           if (result.anonymousResponse) {
             actions.setModelResponse(result.anonymousResponse);
           }
           if (result.finalResponse) {
             actions.setFinalResponse(result.finalResponse);
           }
+
+          console.log('🎉 Flujo completo terminado');
         },
 
         onError: (error) => {
@@ -125,14 +96,22 @@ const InputPanel = () => {
     }
   };
 
+  const isDisabled = state.isLoading || state.isStreaming;
+  const hasContent = state.inputText.trim() || state.inputFile || state.inputImage;
+
   const handleTestEndpoints = async () => {
     try {
       const results = await anonymizationService.testEndpoints();
       console.log('🧪 Test de endpoints:', results);
       
-      if (results.anonymize?.status === 'success' && results.streaming?.status === 'success') {
+      if (results.streaming?.status === 'success' && results.anonymizedRequest?.status === 'success') {
         actions.clearError();
-        alert(`✅ Ambos endpoints funcionando\n\n/anonymize: ✅ PII detectado: ${results.anonymize.pii_detected}\n/chat/streaming: ✅ Status: ${results.streaming.statusCode}\n\nTexto anonimizado: ${results.anonymize.anonymized}`);
+        alert(`✅ Ambos endpoints funcionando
+        
+/chat/streaming: ✅ Status: ${results.streaming.statusCode}
+/anonymized-request: ✅ Texto obtenido: ${results.anonymizedRequest.hasText ? 'Sí' : 'No'} (${results.anonymizedRequest.textLength} caracteres)
+
+El flujo funciona correctamente!`);
       } else {
         actions.setError(`❌ Error en endpoints: ${results.error || 'Algún endpoint falló'}`);
       }
@@ -141,40 +120,8 @@ const InputPanel = () => {
     }
   };
 
-  const isDisabled = state.isLoading || state.isStreaming;
-  const hasContent = state.inputText.trim() || state.inputFile || state.inputImage;
-  const currentAttachment = state.inputFile || state.inputImage;
-
-  const formatFileSize = (bytes) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const getFileIcon = () => {
-    if (!currentAttachment) return null;
-    
-    const fileName = currentAttachment.name.toLowerCase();
-    
-    if (fileName.endsWith('.pdf')) {
-      return <File className="w-5 h-5 text-red-500" />;
-    } else if (fileName.endsWith('.doc') || fileName.endsWith('.docx')) {
-      return <FileText className="w-5 h-5 text-blue-500" />;
-    } else if (fileName.endsWith('.xls') || fileName.endsWith('.xlsx')) {
-      return <FileText className="w-5 h-5 text-green-500" />;
-    } else {
-      return <Paperclip className="w-5 h-5 text-gray-500" />;
-    }
-  };
-
-  // Calcular padding del textarea según si hay adjunto
-  const textareaPaddingTop = currentAttachment ? (state.inputImage ? '110px' : '70px') : '12px';
-
   return (
     <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
-      {/* Header */}
       <div className="bg-gradient-to-r from-brand-primary to-brand-secondary px-6 py-4">
         <div className="flex justify-between items-start">
           <div>
@@ -183,7 +130,7 @@ const InputPanel = () => {
               <span>Entrada de Datos</span>
             </h2>
             <p className="text-brand-light text-sm mt-1">
-              Introduce tu consulta para ver el proceso completo: anonimización + comparación de respuestas IA
+              Panel 1 se carga al inicio, Paneles 2 y 3 en streaming simultáneo
             </p>
           </div>
           
@@ -200,147 +147,106 @@ const InputPanel = () => {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="p-6">
-        <div className="space-y-4">
-          {/* Contenedor del Textarea con Overlay */}
-          <div className="relative">
-            {/* Overlay de Adjunto - Aparece DENTRO del textarea visualmente */}
-            {currentAttachment && (
-              <div className="absolute top-3 left-3 z-10 animate-fade-in">
-                <div className="bg-white border-2 border-gray-200 rounded-lg shadow-sm max-w-xs">
-                  <div className="flex items-start space-x-3 p-3">
-                    {/* Preview de Imagen o Icono */}
-                    <div className="flex-shrink-0">
-                      {state.inputImage && imagePreview ? (
-                        <div className="w-16 h-16 rounded overflow-hidden border border-gray-200">
-                          <img 
-                            src={imagePreview} 
-                            alt="Preview" 
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-12 h-12 rounded bg-gray-50 flex items-center justify-center border border-gray-200">
-                          {getFileIcon()}
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Info del Archivo */}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">
-                        {currentAttachment.name}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {formatFileSize(currentAttachment.size)}
-                      </p>
-                      {state.inputImage && (
-                        <p className="text-xs text-blue-600 mt-1">
-                          Imagen
-                        </p>
-                      )}
-                    </div>
-                    
-                    {/* Botón Eliminar */}
-                    <button
-                      onClick={handleRemoveAttachment}
-                      disabled={isDisabled}
-                      className="flex-shrink-0 p-1 rounded-full hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Quitar adjunto"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+      <div className="border-b border-gray-200">
+        <nav className="flex space-x-0">
+          <button
+            onClick={() => setActiveTab('text')}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'text'
+                ? 'border-brand-primary text-brand-primary bg-brand-light bg-opacity-50'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Texto
+          </button>
+          <button
+            onClick={() => setActiveTab('file')}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'file'
+                ? 'border-brand-primary text-brand-primary bg-brand-light bg-opacity-50'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Archivo
+          </button>
+          <button
+            onClick={() => setActiveTab('image')}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'image'
+                ? 'border-brand-primary text-brand-primary bg-brand-light bg-opacity-50'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Imagen
+          </button>
+        </nav>
+      </div>
 
-            {/* Textarea Principal */}
-            <textarea
+      <div className="p-6">
+        {activeTab === 'text' && (
+          <div className="space-y-4">
+            <TextArea
               placeholder="Escribe tu consulta aquí. Por ejemplo: 'Mi nombre es Juan Pérez, vivo en Madrid y mi email es juan.perez@email.com. ¿Puedes ayudarme con información sobre préstamos hipotecarios?'"
               value={state.inputText}
               onChange={handleTextChange}
               disabled={isDisabled}
               rows={6}
-              style={{ paddingTop: textareaPaddingTop }}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-primary focus:border-brand-primary disabled:bg-gray-50 disabled:cursor-not-allowed placeholder-gray-500 resize-none transition-all duration-200"
+              className="w-full"
             />
-          </div>
-
-          {/* Info Text */}
-          <div className="flex items-center text-xs text-gray-500">
-            <AlertCircle className="w-4 h-4 mr-2" />
-            Verás 3 pasos: datos anonimizados → respuesta con datos falsos → respuesta con datos reales
-          </div>
-          
-          {/* Loading States */}
-          {state.isLoading && !state.isStreaming && (
-            <div className="flex items-center space-x-2 text-xs text-brand-primary bg-brand-light bg-opacity-20 px-3 py-2 rounded-lg">
-              <div className="animate-pulse w-2 h-2 bg-brand-primary rounded-full"></div>
-              <span>Anonimizando datos personales...</span>
+            <div className="flex items-center text-xs text-gray-500">
+              <AlertCircle className="w-4 h-4 mr-2" />
+              Orden: Panel 1 (datos anonimizados) → Panel 2 y 3 (streaming simultáneo)
             </div>
-          )}
-          
-          {state.isStreaming && (
-            <div className="flex items-center space-x-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
-              <div className="animate-pulse w-2 h-2 bg-blue-600 rounded-full"></div>
-              <span>Comparando respuestas en tiempo real...</span>
-            </div>
-          )}
-        </div>
+            
+            {state.isLoading && !state.isStreaming && (
+              <div className="flex items-center space-x-2 text-xs text-brand-primary bg-brand-light bg-opacity-20 px-3 py-2 rounded-lg">
+                <div className="animate-pulse w-2 h-2 bg-brand-primary rounded-full"></div>
+                <span>Iniciando proceso...</span>
+              </div>
+            )}
+            
+            {state.isStreaming && (
+              <div className="flex items-center space-x-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
+                <div className="animate-pulse w-2 h-2 bg-blue-600 rounded-full"></div>
+                <span>Streaming en tiempo real en Paneles 2 y 3...</span>
+              </div>
+            )}
+          </div>
+        )}
 
-        {/* Barra de Herramientas */}
-        <div className="mt-6 flex items-center justify-between">
-          {/* Botones de Adjuntar */}
-          <div className="flex items-center space-x-2">
-            <input
-              ref={fileInputRef}
-              type="file"
+        {activeTab === 'file' && (
+          <div className="space-y-4">
+            <FileUpload
               accept=".pdf,.docx,.xlsx,.txt"
-              onChange={handleFileSelect}
+              onFileSelect={handleFileUpload}
               disabled={isDisabled}
-              className="hidden"
+              selectedFile={state.inputFile}
             />
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageSelect}
-              disabled={isDisabled}
-              className="hidden"
-            />
-            
-            <Button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isDisabled}
-              variant="outline"
-              size="sm"
-              className="flex items-center space-x-2"
-            >
-              <Paperclip className="w-4 h-4" />
-              <span className="hidden sm:inline">Archivo</span>
-            </Button>
-            
-            <Button
-              onClick={() => imageInputRef.current?.click()}
-              disabled={isDisabled}
-              variant="outline"
-              size="sm"
-              className="flex items-center space-x-2"
-            >
-              <ImageIcon className="w-4 h-4" />
-              <span className="hidden sm:inline">Imagen</span>
-            </Button>
-
-            {/* Nota sobre archivos (temporal) */}
-            <div className="hidden md:flex items-center text-xs text-yellow-600 bg-yellow-50 px-3 py-1.5 rounded-lg">
-              <AlertCircle className="w-3 h-3 mr-1" />
-              <span>Solo texto soportado por ahora</span>
+            <div className="text-sm text-gray-600">
+              <AlertCircle className="w-4 h-4 inline mr-1 text-yellow-500" />
+              <strong>Nota:</strong> Los archivos aún no están soportados. Usa texto por ahora.
             </div>
           </div>
+        )}
 
-          {/* Botón de Enviar */}
+        {activeTab === 'image' && (
+          <div className="space-y-4">
+            <FileUpload
+              accept="image/*"
+              onFileSelect={handleImageUpload}
+              disabled={isDisabled}
+              selectedFile={state.inputImage}
+              icon={ImageIcon}
+              text="Seleccionar imagen o arrastrar aquí"
+            />
+            <div className="text-sm text-gray-600">
+              <AlertCircle className="w-4 h-4 inline mr-1 text-yellow-500" />
+              <strong>Nota:</strong> Las imágenes aún no están soportadas. Usa texto por ahora.
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-end">
           <Button
             onClick={handleSubmit}
             disabled={isDisabled || !hasContent}
@@ -349,14 +255,13 @@ const InputPanel = () => {
           >
             <Send className="w-4 h-4 mr-2" />
             {state.isLoading && !state.isStreaming
-              ? 'Anonimizando...'
+              ? 'Iniciando...'
               : state.isStreaming 
-                ? 'Comparando respuestas...' 
+                ? 'Streaming en curso...' 
                 : 'Iniciar Proceso Completo'}
           </Button>
         </div>
 
-        {/* Error Display */}
         {state.error && (
           <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-2">
             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
@@ -364,7 +269,6 @@ const InputPanel = () => {
           </div>
         )}
 
-        {/* Dev Info */}
         {process.env.NODE_ENV === 'development' && state.sessionId && (
           <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
             <p className="text-xs text-gray-600">
@@ -375,13 +279,13 @@ const InputPanel = () => {
               Streaming: {state.isStreaming ? '🟢 Activo' : '🔴 Inactivo'}
             </p>
             <p className="text-xs text-gray-600">
-              Paneles: 
-              {state.anonymizedText ? ' ✅P1' : ' ❌P1'} |
-              {state.modelResponse ? ' ✅P2' : ' ❌P2'} |
-              {state.finalResponse || state.streamingText ? ' ✅P3' : ' ❌P3'}
+              Flujo: metadata → /anonymized-request (P1), chunks → P2+P3
             </p>
             <p className="text-xs text-gray-600">
-              Adjunto: {currentAttachment ? `✅ ${currentAttachment.name}` : '❌ Ninguno'}
+              Paneles: 
+              {state.anonymizedText ? ' ✅P1' : ' ⏳P1'} |
+              {state.modelResponse ? ' ✅P2' : ' ❌P2'} |
+              {state.finalResponse || state.streamingText ? ' ✅P3' : ' ❌P3'}
             </p>
           </div>
         )}
