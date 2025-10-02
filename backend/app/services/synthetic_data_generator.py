@@ -37,13 +37,13 @@ class ImprovedMappingValidator:
     }
     
     INVALID_PATTERNS = [
-        r'^[a-z]{1,3}$',          # Fragmentos muy cortos
-        r'^\.$',                  # Solo puntos
-        r'^[A-Z]$',               # Solo una letra
-        r'^[^a-zA-Z0-9@.]+$',     # Solo símbolos
-        r'^[a-z]+$',              # Solo minúsculas (fragmentos)
-        r'^\d{1,3}$',             # Números muy cortos
-        r'^[.,:;!?-]+$'           # Solo puntuación
+        r'^[a-z]{1,3}$',
+        r'^\.$',
+        r'^[A-Z]$',
+        r'^[^a-zA-Z0-9@.]+$',
+        r'^[a-z]+$',
+        r'^\d{1,3}$',
+        r'^[.,:;!?-]+$'
     ]
     
     @staticmethod
@@ -54,7 +54,6 @@ class ImprovedMappingValidator:
             
         cleaned_mapping = {}
         
-        # Agrupar valores similares
         grouped_values = {}
         for token, value in mapping.items():
             clean_value = value.strip()
@@ -62,13 +61,10 @@ class ImprovedMappingValidator:
                 grouped_values[clean_value] = []
             grouped_values[clean_value].append(token)
         
-        # Procesar cada valor único
         for value, tokens in grouped_values.items():
-            # Validar valor
             if not ImprovedMappingValidator._is_valid_entity_value(value):
                 continue
                 
-            # Seleccionar mejor token
             best_token = ImprovedMappingValidator._select_best_token(tokens, value)
             
             if best_token and ImprovedMappingValidator._is_valid_entity(best_token, value):
@@ -81,15 +77,12 @@ class ImprovedMappingValidator:
         """Validación básica del valor"""
         clean_value = value.strip().lower()
         
-        # Filtrar valores muy cortos
         if len(clean_value) < 2:
             return False
             
-        # Filtrar stopwords
         if clean_value in ImprovedMappingValidator.STOPWORDS:
             return False
             
-        # Filtrar patrones inválidos
         for pattern in ImprovedMappingValidator.INVALID_PATTERNS:
             if re.match(pattern, value.strip()):
                 return False
@@ -114,7 +107,6 @@ class ImprovedMappingValidator:
     @staticmethod
     def _is_valid_entity(token: str, value: str) -> bool:
         """Validación específica por tipo de entidad"""
-        # Extraer tipo del token
         token_upper = token.upper()
         
         if 'EMAIL' in token_upper:
@@ -138,10 +130,12 @@ class ImprovedMappingValidator:
 
 
 class EnhancedSyntheticDataGenerator:
-    """Generador mejorado de datos sintéticos"""
+    """Generador mejorado de datos sintéticos con mayor realismo"""
     
     def __init__(self, locale='es_ES'):
         self.fake = Faker(locale)
+        self._name_cache = {}
+        self._email_cache = {}
         
     def generate_synthetic_replacement(self, entity_type: str, original_value: str) -> str:
         """Genera reemplazo sintético basado en el tipo de entidad"""
@@ -161,7 +155,7 @@ class EnhancedSyntheticDataGenerator:
             elif entity_type_upper in ['LOCATION', 'LOC']:
                 return self._generate_location()
             elif entity_type_upper in ['ORGANIZATION', 'ORG']:
-                return self._generate_organization()
+                return self._generate_organization(original_value)
             elif entity_type_upper == 'IBAN':
                 return self._generate_iban()
             else:
@@ -187,47 +181,111 @@ class EnhancedSyntheticDataGenerator:
         return f"{prefix}{numbers}{control}"
     
     def _generate_phone(self, original: str) -> str:
-        """Genera teléfono sintético español"""
-        prefix = '+34 ' if '+34' in original else ''
+        """Genera teléfono sintético español con formato natural"""
+        has_country_code = '+34' in original or original.strip().startswith('00')
+        
         if original and original.strip().startswith('9'):
-            first = '9'
-            second = random.choice(['1', '2', '3', '4', '5'])
+            first_digit = '9'
+            second_digit = random.choice(['1', '2', '3', '4', '5', '6', '7', '8'])
             rest = ''.join([str(random.randint(0, 9)) for _ in range(7)])
-            return f"{prefix}{first}{second} {rest[:3]} {rest[3:5]} {rest[5:]}"
+            phone_number = f"{first_digit}{second_digit}{rest}"
         else:
-            first = random.choice(['6', '7'])
+            first_digit = random.choice(['6', '7'])
             rest = ''.join([str(random.randint(0, 9)) for _ in range(8)])
-            return f"{prefix}{first}{rest[:2]} {rest[2:5]} {rest[5:]}"
+            phone_number = f"{first_digit}{rest}"
+        
+        if has_country_code:
+            return f"+34 {phone_number[:3]} {phone_number[3:6]} {phone_number[6:]}"
+        else:
+            return f"{phone_number[:3]} {phone_number[3:6]} {phone_number[6:]}"
     
     def _generate_email(self, original: str) -> str:
-        """Genera email sintético"""
+        """Genera email sintético realista manteniendo el dominio"""
         if '@' in original:
             domain = original.split('@')[-1]
-            username = self.fake.user_name()
-            return f"{username}@{domain}"
+            local_part = original.split('@')[0]
+            
+            if original in self._email_cache:
+                return self._email_cache[original]
+            
+            if '.' in local_part:
+                first_name = self.fake.first_name().lower()
+                last_name = self.fake.last_name().lower()
+                synthetic_email = f"{first_name}.{last_name}@{domain}"
+            elif '_' in local_part:
+                first_name = self.fake.first_name().lower()
+                last_name = self.fake.last_name().lower()
+                synthetic_email = f"{first_name}_{last_name}@{domain}"
+            elif any(char.isdigit() for char in local_part):
+                username = self.fake.user_name()
+                number = random.randint(10, 99)
+                synthetic_email = f"{username}{number}@{domain}"
+            else:
+                first_name = self.fake.first_name().lower()
+                last_name = self.fake.last_name().lower()
+                synthetic_email = f"{first_name}{last_name}@{domain}"
+            
+            self._email_cache[original] = synthetic_email
+            return synthetic_email
+        
         return self.fake.email()
     
     def _generate_person_name(self, original: str) -> str:
-        """Genera nombre sintético"""
+        """Genera nombre sintético manteniendo estructura y estilo"""
+        if original in self._name_cache:
+            return self._name_cache[original]
+        
         parts = original.split() if original else []
+        
         if len(parts) == 2:
-            return f"{self.fake.first_name()} {self.fake.last_name()}"
-        elif len(parts) >= 3:
-            return f"{self.fake.first_name()} {self.fake.first_name()} {self.fake.last_name()}"
-        return self.fake.name()
+            synthetic_name = f"{self.fake.first_name()} {self.fake.last_name()}"
+        elif len(parts) == 3:
+            has_middle_initial = len(parts[1]) <= 2 and parts[1].endswith('.')
+            if has_middle_initial:
+                middle_initial = random.choice('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+                synthetic_name = f"{self.fake.first_name()} {middle_initial}. {self.fake.last_name()}"
+            else:
+                synthetic_name = f"{self.fake.first_name()} {self.fake.first_name()} {self.fake.last_name()}"
+        elif len(parts) >= 4:
+            first = self.fake.first_name()
+            middle = self.fake.first_name()
+            last1 = self.fake.last_name()
+            last2 = self.fake.last_name()
+            synthetic_name = f"{first} {middle} {last1} {last2}"
+        else:
+            synthetic_name = self.fake.name()
+        
+        self._name_cache[original] = synthetic_name
+        return synthetic_name
     
     def _generate_location(self) -> str:
         """Genera ubicación sintética española"""
-        cities = ['Barcelona', 'Valencia', 'Sevilla', 'Bilbao', 'Málaga', 
-                 'Zaragoza', 'Murcia', 'Córdoba', 'Palma', 'Granada']
+        cities = [
+            'Barcelona', 'Valencia', 'Sevilla', 'Bilbao', 'Málaga', 
+            'Zaragoza', 'Murcia', 'Córdoba', 'Palma', 'Granada',
+            'Alicante', 'Valladolid', 'Vigo', 'Gijón', 'Salamanca'
+        ]
         return random.choice(cities)
     
-    def _generate_organization(self) -> str:
-        """Genera organización sintética"""
-        return self.fake.company() + ' S.A.'
+    def _generate_organization(self, original: str = None) -> str:
+        """Genera organización sintética manteniendo sufijos legales"""
+        if original:
+            if 'S.A.' in original or 'SA' in original:
+                return f"{self.fake.company()} S.A."
+            elif 'S.L.' in original or 'SL' in original:
+                return f"{self.fake.company()} S.L."
+            elif 'Ltd' in original or 'Limited' in original:
+                return f"{self.fake.company()} Ltd."
+            elif 'Inc' in original:
+                return f"{self.fake.company()} Inc."
+            elif 'Departamento' in original or 'Department' in original:
+                departments = ['Ventas', 'Marketing', 'Recursos Humanos', 'Tecnología', 'Atención al Cliente']
+                return f"Departamento de {random.choice(departments)}"
+        
+        return f"{self.fake.company()} S.A."
     
     def _generate_iban(self) -> str:
-        """Genera IBAN sintético español"""
+        """Genera IBAN sintético español con formato correcto"""
         bank = ''.join([str(random.randint(0, 9)) for _ in range(4)])
         branch = ''.join([str(random.randint(0, 9)) for _ in range(4)])
         control = ''.join([str(random.randint(0, 9)) for _ in range(2)])
@@ -236,7 +294,10 @@ class EnhancedSyntheticDataGenerator:
         return f"ES{iban_control} {bank} {branch} {control} {account}"
     
     def _generate_fallback(self, original: str) -> str:
-        """Fallback para tipos desconocidos"""
+        """Fallback para tipos desconocidos con mayor inteligencia"""
         if original.isdigit():
             return ''.join([str(random.randint(0, 9)) for _ in range(len(original))])
-        return self.fake.word()
+        elif len(original.split()) > 1:
+            return ' '.join([self.fake.word() for _ in range(len(original.split()))])
+        else:
+            return self.fake.word()

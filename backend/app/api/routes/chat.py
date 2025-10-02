@@ -4,6 +4,14 @@ Endpoint de chat que integra:
 2. MultiProviderLLMClient para Grok, OpenAI y Anthropic
 3. Sistema de desanonimización propio
 4. Sistema de datos sintéticos mejorado
+
+CAMBIOS REALIZADOS EN ESTE ARCHIVO:
+- Importar synthetic_data_generator para unificar generación de datos falsos
+- Modificar endpoint /streaming para retornar StreamingResponse real
+- Usar generate_real_time_dual_stream() para streaming SSE correcto
+- Guardar texto anonimizado en Redis para que test.html pueda cargarlo
+- FORZAR use_realistic_fake=True para siempre usar datos sintéticos realistas
+- ELIMINAR post-procesamiento redundante (PASO 2.2) ya que pii_detector lo hace
 """
 
 from fastapi import APIRouter, HTTPException
@@ -13,14 +21,12 @@ from typing import Optional, Dict
 import logging
 import time
 import json
-import requests
-import ssl
-from services.llm_integration import MultiProviderLLMClient
+
+from services.llm_integration import MultiProviderLLMClient, LLMClientPropuesta
+from services.deanonymization_service import generate_real_time_dual_stream
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 logger = logging.getLogger(__name__)
-
-# === HELPER FUNCTIONS ===
 
 def anonymize_with_existing_map(text: str, existing_mapping: Dict[str, str]) -> str:
     """
@@ -35,8 +41,6 @@ def anonymize_with_existing_map(text: str, existing_mapping: Dict[str, str]) -> 
             logger.debug(f"✅ Reemplazo: '{real_data}' -> '{fake_data}'")
     logger.debug(f"Anonimizado con mapa existente: '{text}' -> '{result}'")
     return result
-
-# === REQUEST/RESPONSE MODELS ===
 
 class ChatRequest(BaseModel):
     message: str
@@ -56,8 +60,6 @@ class ChatResponse(BaseModel):
     anonymized_used: bool
     llm_model: str
 
-# === STREAMING CHAT ENDPOINT ===
-
 @router.post("/streaming")
 async def chat_stream_propuesta(request: ChatRequest):
     try:
@@ -65,7 +67,7 @@ async def chat_stream_propuesta(request: ChatRequest):
         session_id = request.session_id or f"stream_session_{int(time.time())}"
         existing_mapping = None
 
-        # ===== PASO 1: OBTENER MAPA EXISTENTE =====
+        # PASO 1: OBTENER MAPA EXISTENTE
         if request.save_mapping and session_id:
             try:
                 from services.session_manager import get_anonymization_map
@@ -74,7 +76,7 @@ async def chat_stream_propuesta(request: ChatRequest):
             except Exception:
                 existing_mapping = None
 
-        # ===== PASO 2: ANONIMIZACIÓN =====
+        # PASO 2: ANONIMIZACIÓN
         if existing_mapping:
             anonymized_text = anonymize_with_existing_map(request.message, existing_mapping)
             mapping = existing_mapping
@@ -91,70 +93,43 @@ async def chat_stream_propuesta(request: ChatRequest):
                 use_regex=request.use_regex,
                 pseudonymize=False,
                 save_mapping=False,
-                use_realistic_fake=False
+                use_realistic_fake=True
             )
             anonymized_text = anonymization_result.get('anonymized', request.message)
             mapping = anonymization_result.get('mapping', {})
             pii_detected = bool(mapping)
 
-            # ===== PASO 2.2: SISTEMA DE DATOS SINTÉTICOS MEJORADO =====
-            if mapping:
-                try:
-                    from services.synthetic_data_generator import EnhancedSyntheticDataGenerator, ImprovedMappingValidator
-                    validator = ImprovedMappingValidator()
-                    generator = EnhancedSyntheticDataGenerator()
-                    clean_mapping = validator.validate_and_clean_mapping(mapping)
-
-                    for token, original_value in sorted(clean_mapping.items(), key=lambda x: len(x[1]), reverse=True):
-                        if token in anonymized_text:
-                            entity_type = token.strip('[]').split('_')[0]
-                            synthetic_value = generator.generate_synthetic_replacement(entity_type, original_value)
-                            anonymized_text = anonymized_text.replace(token, synthetic_value)
-                            mapping[synthetic_value] = original_value
-                            if token in mapping:
-                                del mapping[token]
-                except Exception as e:
-                    logger.warning(f"Error aplicando datos sintéticos mejorados: {e}")
-
-        # ===== PASO 3: GUARDAR MAPA EN REDIS =====
+        # PASO 3: GUARDAR MAPA EN REDIS
         if mapping and request.save_mapping:
             try:
-                from services.session_manager import store_anonymization_map
+                from services.session_manager import store_anonymization_map, store_anonymized_request
                 store_anonymization_map(session_id, mapping)
+                store_anonymized_request(session_id, anonymized_text)
+                logger.info(f"✅ Texto anonimizado guardado en Redis para sesión {session_id}")
             except Exception as e:
                 logger.warning(f"No se pudo guardar mapa en Redis: {e}")
 
-        # ===== PASO 4: LLAMADA AL LLM MULTI-PROVEEDOR =====
-        llm_client = MultiProviderLLMClient()
-
+        # PASO 4: PREPARAR PROMPT PARA LLM
         if request.llm_prompt_template:
             llm_prompt = request.llm_prompt_template.format(text=anonymized_text)
         else:
             llm_prompt = f"Actúa como un asistente útil y responde de manera clara y completa a la siguiente consulta: {anonymized_text}"
 
-        llm_response, provider_used = llm_client.call_llm(llm_prompt, timeout=45)
-        logger.info(f"Respuesta obtenida de {provider_used}: {llm_response}")
-
-        # ===== PASO 5: DESANONIMIZACIÓN =====
-        final_response = llm_response
-        if pii_detected and mapping:
-            try:
-                from services.deanonymization_service import create_reverse_map, deanonymize_text
-                reverse_map = create_reverse_map(mapping)
-                final_response = deanonymize_text(llm_response, reverse_map)
-            except Exception as e:
-                logger.warning(f"No se pudo desanonimizar la respuesta: {e}")
-                final_response = llm_response
-
-        processing_time = time.time() - start_time
-
-        return ChatResponse(
-            response=final_response,
-            session_id=session_id,
-            pii_detected=pii_detected,
-            processing_time=round(processing_time, 3),
-            anonymized_used=pii_detected,
-            llm_model=provider_used
+        # PASO 5: RETORNAR STREAMING RESPONSE REAL
+        llm_client = LLMClientPropuesta()
+        
+        return StreamingResponse(
+            generate_real_time_dual_stream(
+                session_id=session_id,
+                llm_prompt=llm_prompt,
+                mapping=mapping,
+                llm_client=llm_client
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
         )
 
     except HTTPException:
@@ -162,8 +137,6 @@ async def chat_stream_propuesta(request: ChatRequest):
     except Exception as e:
         logger.error(f"Error en chat streaming: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error en streaming: {str(e)}")
-
-# === DEBUG/TEST ENDPOINTS ===
 
 @router.post("/test-anonymization-consistency")
 async def test_anonymization_consistency(request: ChatRequest):

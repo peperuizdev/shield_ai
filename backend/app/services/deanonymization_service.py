@@ -581,7 +581,7 @@ async def generate_real_time_dual_stream(
         chunk_count = 0
         
         # Inicializar el procesador de chunks CORREGIDO (versión segura)
-        from services.chunk_deanonymizer_fixed import ChunkDeanonymizer
+        from services.chunk_deanonymizer import ChunkDeanonymizer
         chunk_processor = ChunkDeanonymizer(reverse_map)
         
         # STREAMING REAL-TIME DEL LLM
@@ -710,7 +710,7 @@ def test_chunk_deanonymizer_fix():
     """
     Prueba específica para validar la corrección del ChunkDeanonymizer.
     """
-    from services.chunk_deanonymizer_fixed import ChunkDeanonymizer
+    from services.chunk_deanonymizer import ChunkDeanonymizer
     
     # Mapping problemático
     mapping = create_test_mapping_for_debug()

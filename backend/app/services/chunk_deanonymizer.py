@@ -1,186 +1,260 @@
 """
-Chunked Deanonymization Helper
-Maneja la deanonymización de chunks fragmentados del LLM
+Chunked Deanonymization Helper - VERSIÓN CORREGIDA
+Maneja la deanonymización precisa de chunks fragmentados del LLM
+Evita reemplazos incorrectos usando coincidencias exactas validadas
 """
 
 import logging
+import re
 from typing import Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
 class ChunkDeanonymizer:
     """
-    Maneja la deanonymización de chunks fragmentados en tiempo real.
-    Estrategia mejorada: acumula más contenido antes de procesar para evitar fragmentación.
+    Deanonymización inteligente y CONSERVADORA de chunks fragmentados.
+    Prioriza precisión sobre velocidad para evitar reemplazos incorrectos.
     """
     
     def __init__(self, reverse_map: Dict[str, str]):
         self.reverse_map = reverse_map
-        self.input_buffer = ""  # Todo el texto recibido
-        self.output_buffer = ""  # Todo el texto procesado
-        self.last_sent_pos = 0   # Posición hasta donde hemos enviado texto
+        self.input_buffer = ""  # Texto acumulado del LLM
+        self.last_sent_pos = 0   # Posición hasta donde hemos enviado
+        
+        # Identificar entidades largas que requieren cuidado extra
+        self.long_entities = [entity for entity in reverse_map.keys() 
+                             if ' ' in entity and len(entity.split()) >= 3]
+        logger.debug(f"🔒 Long entities requiring extra care: {self.long_entities}")
         
     def process_chunk(self, chunk: str) -> Tuple[str, str]:
         """
-        Procesa un chunk con estrategia de buffer mejorada.
+        Procesa un chunk con MÁXIMA PROTECCIÓN para nombres largos.
         
         Args:
             chunk: Fragmento de texto del LLM
             
         Returns:
-            Tuple[anonymous_output, deanonymized_output]: Texto a enviar en cada stream
+            Tuple[anonymous_output, deanonymized_output]: Texto para cada stream
         """
-        # Añadir chunk al buffer de entrada
+        # Acumular chunk en el buffer
         self.input_buffer += chunk
         
-        # El output anónimo siempre es el chunk original (sin procesar)
+        # Output anónimo siempre es el chunk original
         anonymous_output = chunk
         
-        # Procesar el buffer completo para deanonymización
-        full_deanonymized = self._deanonymize_full_buffer()
+        # Procesar buffer completo con validación estricta
+        full_deanonymized = self._safe_deanonymize_buffer()
         
-        # Determinar qué parte nueva enviar en el stream deanonymizado
+        # ESTRATEGIA ULTRA-CONSERVADORA: No enviar NADA si hay entidades largas pendientes
+        might_be_inside_entity = self._might_be_inside_long_entity(self.input_buffer)
+        
+        if might_be_inside_entity:
+            # Si hay riesgo de entidad larga, NO ENVIAR NADA hasta completar
+            logger.debug(f"🔒 HOLDING OUTPUT - Possible long entity in progress")
+            return anonymous_output, ""
+        
+        # Solo si NO hay riesgo, calcular contenido para enviar
         new_content = full_deanonymized[self.last_sent_pos:]
         
-        # Estrategia conservadora: solo enviar contenido "estable"
-        # Si el chunk actual termina en medio de una palabra, retener la última palabra
+        # Aplicar filtros de estabilidad muy conservadores
         stable_content = self._get_stable_content(new_content)
         
-        # Actualizar posición de envío
+        # Verificación adicional: no enviar si detectamos posibles fragmentos de entidades
+        if stable_content and self._contains_possible_entity_fragment(stable_content):
+            logger.debug(f"🔒 BLOCKING FRAGMENT - Possible entity fragment detected")
+            return anonymous_output, ""
+        
         if stable_content:
             self.last_sent_pos += len(stable_content)
         
-        deanonymized_output = stable_content
-        
-        # Log detallado para debugging
+        # Debug logging
         logger.debug(f"📝 Chunk in: {repr(chunk)}")
-        logger.debug(f"📦 Input buffer ({len(self.input_buffer)}): {repr(self.input_buffer[:100])}")
-        logger.debug(f"🔄 Full deanon ({len(full_deanonymized)}): {repr(full_deanonymized[:100])}")
-        logger.debug(f"📤 Stable content: {repr(stable_content)}")
-        logger.debug(f"� Last sent pos: {self.last_sent_pos}")
+        logger.debug(f"📦 Buffer: {repr(self.input_buffer[:100])}")
+        logger.debug(f"📤 Deanon out: {repr(stable_content)}")
         
-        # Debug específico para detección de nombres
-        for fake_name in self.reverse_map.keys():
-            if fake_name in self.input_buffer:
-                logger.debug(f"🎯 FOUND COMPLETE NAME '{fake_name}' in buffer!")
-            else:
-                # Verificar fragmentos
-                for word in fake_name.split():
-                    if word in self.input_buffer:
-                        logger.debug(f"🔍 Found partial name fragment '{word}' from '{fake_name}'")
-        
-        return anonymous_output, deanonymized_output
+        return anonymous_output, stable_content
     
-    def _deanonymize_full_buffer(self) -> str:
+    def _safe_deanonymize_buffer(self) -> str:
         """
-        Deanonymiza el buffer completo de entrada usando estrategia mejorada.
-        Prioriza coincidencias exactas y maneja mejor los nombres fragmentados.
+        Deanonymiza usando SOLO coincidencias exactas y VALIDADAS.
+        Evita fragmentaciones y reemplazos parciales incorrectos.
         """
         result = self.input_buffer
         replacements_made = []
         
-        # Ordenar por longitud descendente para procesar nombres completos primero
-        sorted_items = sorted(self.reverse_map.items(), key=lambda x: len(x[0]), reverse=True)
+        # Procesar entidades por orden de longitud (más largas primero)
+        sorted_entities = sorted(self.reverse_map.items(), key=lambda x: len(x[0]), reverse=True)
         
-        logger.debug(f"🔍 Procesando buffer: {repr(result[:200])}")
-        logger.debug(f"🗺️ Mapa disponible: {self.reverse_map}")
+        logger.debug(f"🔍 Processing buffer: {repr(result[:200])}")
+        logger.debug(f"🗺️ Entities available: {list(self.reverse_map.keys())}")
         
-        # ESTRATEGIA 1: Coincidencias exactas completas (máxima prioridad)
-        for fake_data, original_data in sorted_items:
-            if fake_data in result:
-                count_before = result.count(fake_data)
-                result = result.replace(fake_data, original_data)
-                replacements_made.append(f"'{fake_data}' -> '{original_data}' (exact, {count_before}x)")
-                logger.info(f"🎯 EXACT REPLACEMENT: '{fake_data}' -> '{original_data}'")
+        # ESTRATEGIA 1: COINCIDENCIAS EXACTAS COMPLETAS Y VALIDADAS
+        for fake_entity, real_entity in sorted_entities:
+            if fake_entity in result:
+                # Validar que es una coincidencia segura (no fragmento de algo más grande)
+                if self._is_complete_entity_match(result, fake_entity):
+                    result = result.replace(fake_entity, real_entity)
+                    replacements_made.append(f"'{fake_entity}' -> '{real_entity}'")
+                    logger.info(f"🎯 EXACT REPLACEMENT: '{fake_entity}' -> '{real_entity}'")
         
-        # ESTRATEGIA 2: Coincidencias por palabras individuales (si no hubo exactas)
+        # ESTRATEGIA 2: REEMPLAZOS DE FRAGMENTOS LARGOS (para nombres multi-palabra)
+        # Solo si no se hizo ningún reemplazo exacto
         if not replacements_made:
-            logger.debug("🔍 No exact matches, trying word-by-word...")
-            
-            for fake_data, original_data in sorted_items:
-                if ' ' in fake_data and ' ' in original_data:  # Solo nombres multi-palabra
-                    fake_words = fake_data.split()
-                    original_words = original_data.split()
+            for fake_entity, real_entity in sorted_entities:
+                if ' ' in fake_entity and len(fake_entity.split()) >= 3:  # Solo nombres largos
+                    fake_words = fake_entity.split()
                     
-                    # Verificar cada palabra individual del nombre falso
-                    for i, fake_word in enumerate(fake_words):
-                        if fake_word in result and len(fake_word) >= 3:  # Mínimo 3 chars
-                            if i < len(original_words):
-                                original_word = original_words[i]
-                                # Reemplazar solo si no es parte de otra palabra
-                                import re
-                                pattern = r'\b' + re.escape(fake_word) + r'\b'
-                                if re.search(pattern, result):
-                                    result = re.sub(pattern, original_word, result)
-                                    replacements_made.append(f"'{fake_word}' -> '{original_word}' (word {i+1})")
-                                    logger.info(f"🔄 WORD REPLACEMENT: '{fake_word}' -> '{original_word}'")
-        
-        # ESTRATEGIA 3: Coincidencias de subcadenas largas (último recurso)
-        if not replacements_made:
-            logger.debug("🔍 No word matches, trying substring matching...")
-            
-            for fake_data, original_data in sorted_items:
-                # Buscar subcadenas significativas del nombre falso
-                if len(fake_data) >= 6:  # Solo nombres suficientemente largos
-                    for i in range(len(fake_data) - 3):
-                        for j in range(i + 4, len(fake_data) + 1):
-                            substring = fake_data[i:j]
-                            if len(substring) >= 4 and substring in result:
-                                # Calcular substring correspondiente en original
-                                if j <= len(original_data):
-                                    orig_substring = original_data[i:j]
-                                    result = result.replace(substring, orig_substring)
-                                    replacements_made.append(f"'{substring}' -> '{orig_substring}' (substring)")
-                                    logger.info(f"� SUBSTRING REPLACEMENT: '{substring}' -> '{orig_substring}'")
+                    # Buscar fragmentos de 2+ palabras consecutivas del nombre original
+                    for i in range(len(fake_words) - 1):
+                        for j in range(i + 2, len(fake_words) + 1):
+                            fragment = ' '.join(fake_words[i:j])
+                            
+                            if len(fragment) >= 10 and fragment in result:  # Solo fragmentos largos
+                                if self._is_complete_entity_match(result, fragment):
+                                    result = result.replace(fragment, real_entity)
+                                    replacements_made.append(f"'{fragment}' -> '{real_entity}' (fragment)")
+                                    logger.info(f"🔧 FRAGMENT REPLACEMENT: '{fragment}' -> '{real_entity}'")
                                     break
                         if replacements_made:
                             break
-                if replacements_made:
-                    break
+                else:
+                    logger.debug(f"❌ FRAGMENT DETECTED - Skipping unsafe replacement for '{fake_entity}'")
         
         if replacements_made:
-            logger.debug(f"✅ All replacements made: {replacements_made}")
+            logger.debug(f"✅ Safe replacements: {replacements_made}")
         else:
-            logger.debug("⚠️ No replacements made in this buffer")
+            logger.debug("⚠️ No complete entities found for replacement")
         
         return result
     
+    def _is_complete_entity_match(self, text: str, entity: str) -> bool:
+        """
+        Valida que una entidad aparece como elemento completo, no como fragmento.
+        VERSIÓN ULTRA-CONSERVADORA para evitar reemplazos parciales.
+        
+        Args:
+            text: Texto completo donde buscar
+            entity: Entidad a validar
+            
+        Returns:
+            bool: True si es una entidad completa y segura de reemplazar
+        """
+        # Escapar caracteres especiales para regex
+        escaped_entity = re.escape(entity)
+        
+        # VALIDACIÓN ULTRA-ESTRICTA: Solo permitir reemplazos con separadores claros
+        # Para nombres largos multi-palabra, ser extra cuidadoso
+        if ' ' in entity and len(entity.split()) >= 3:
+            # Nombres largos (3+ palabras): Requieren separadores muy específicos
+            pattern = r'(?:^|\s|\n)' + escaped_entity + r'(?:\s|\n|$|[,.!?;:\)])'
+        elif '@' in entity:
+            # Emails: deben estar rodeados de espacios o límites claros
+            pattern = r'(?:^|\s|\n)' + escaped_entity + r'(?:\s|\n|$|[,.!?;:\)])'
+        elif '_' in entity or '-' in entity:
+            # Entidades con separadores: rodeadas de espacios o límites claros
+            pattern = r'(?:^|\s|\n)' + escaped_entity + r'(?:\s|\n|$|[,.!?;:\)])'
+        elif entity.isdigit() and len(entity) >= 3:
+            # Números largos: límites de palabra muy estrictos
+            pattern = r'(?:^|\s|\n)' + escaped_entity + r'(?:\s|\n|$|[,.!?;:\)])'
+        elif ' ' in entity:
+            # Nombres multi-palabra normales: límites de palabra estrictos
+            pattern = r'(?:^|\s|\n)' + escaped_entity + r'(?:\s|\n|$|[,.!?;:\)])'
+        else:
+            # Palabras simples: límites de palabra muy estrictos
+            pattern = r'(?:^|\s|\n)' + escaped_entity + r'(?:\s|\n|$|[,.!?;:\)])'
+        
+        # Buscar coincidencia con el patrón
+        match = re.search(pattern, text, re.IGNORECASE)
+        
+        if match:
+            logger.debug(f"✅ ULTRA-CONSERVATIVE MATCH: '{entity}' found safely with pattern: {pattern}")
+            return True
+        else:
+            logger.debug(f"❌ ULTRA-CONSERVATIVE REJECTION: '{entity}' not found with safe boundaries")
+            return False
+    
     def _get_stable_content(self, new_content: str) -> str:
         """
-        Retorna solo el contenido "estable" que se puede enviar sin riesgo.
-        Retiene palabras incompletas al final para evitar cortar nombres a medias.
+        Retorna solo contenido "estable" para evitar enviar palabras cortadas.
+        VERSIÓN ULTRA-CONSERVADORA para nombres largos.
         """
         if not new_content:
             return ""
             
-        # Si termina con espacio o puntuación, enviar todo
-        if new_content.endswith((' ', '.', ',', '!', '?', '\n', '\t')):
+        # Si termina con separador claro, enviar todo
+        if new_content.endswith((' ', '.', ',', '!', '?', '\n', '\t', ':', ';', ')')):
             return new_content
             
-        # Si es muy corto, retener todo para acumular más
-        if len(new_content.strip()) < 3:
+        # Si muy corto, esperar más contenido
+        if len(new_content.strip()) < 5:  # Aumentado de 3 a 5 para ser más conservador
             return ""
             
-        # Buscar la última palabra completa
+        # Para nombres largos, ser extra cuidadoso
+        # Enviar solo si hay múltiples palabras Y terminan con separador claro
         words = new_content.split()
-        if len(words) <= 1:
-            return ""  # Retener si solo hay una palabra incompleta
+        
+        # Si solo hay 1-2 palabras, esperar más contenido para evitar cortar nombres
+        if len(words) <= 2:
+            return ""
             
-        # Enviar todas las palabras completas excepto la última (que puede estar incompleta)
-        stable_words = words[:-1]
-        return ' '.join(stable_words) + ' ' if stable_words else ""
+        # Si hay 3+ palabras, enviar todas excepto las últimas 2 (más conservador)
+        if len(words) >= 4:
+            return ' '.join(words[:-2]) + ' '
+        elif len(words) == 3:
+            # Con 3 palabras, enviar solo la primera para evitar cortar nombres largos
+            return words[0] + ' '
+        else:
+            return ""
     
     def finalize(self) -> Tuple[str, str]:
         """
-        Finaliza el procesamiento y retorna cualquier texto pendiente.
-        Procesa todo el contenido restante sin restricciones de estabilidad.
+        Finaliza procesamiento enviando todo el contenido restante.
         """
-        # Procesar todo el buffer final
-        final_deanonymized = self._deanonymize_full_buffer()
-        
-        # Retornar todo lo que no se ha enviado aún
+        final_deanonymized = self._safe_deanonymize_buffer()
         remaining_content = final_deanonymized[self.last_sent_pos:]
         
-        logger.debug(f"🏁 Finalizando: remaining content = {repr(remaining_content)}")
+        logger.debug(f"🏁 Finalizing with remaining content: {repr(remaining_content)}")
         
         return "", remaining_content
+    
+    def _might_be_inside_long_entity(self, text: str) -> bool:
+        """
+        Detecta si el texto actual podría estar en medio de una entidad larga.
+        Esto ayuda a evitar reemplazos prematuros de nombres largos.
+        """
+        # Verificar si algún fragmento del final del texto podría ser parte de una entidad larga
+        text_end = text[-50:] if len(text) > 50 else text  # Solo los últimos 50 chars
+        
+        for entity in self.long_entities:
+            entity_words = entity.split()
+            
+            # Verificar si alguna parte del final del texto coincide con el inicio de la entidad
+            for i in range(1, len(entity_words)):
+                partial_entity = ' '.join(entity_words[:i])
+                if text_end.endswith(partial_entity) or partial_entity in text_end[-len(partial_entity)-5:]:
+                    logger.debug(f"⚠️ Possible partial match for long entity '{entity}': found '{partial_entity}'")
+                    return True
+                    
+        return False
+    
+    def _contains_possible_entity_fragment(self, content: str) -> bool:
+        """
+        Verifica si el contenido a enviar podría contener fragmentos de entidades.
+        """
+        content_lower = content.lower()
+        
+        for entity in self.reverse_map.keys():
+            entity_lower = entity.lower()
+            entity_words = entity_lower.split()
+            
+            # Verificar si alguna palabra del contenido podría ser parte de una entidad
+            for word in content.split():
+                word_lower = word.strip('.,!?;:').lower()
+                
+                # Si la palabra es parte de alguna entidad, podría ser un fragmento
+                for entity_word in entity_words:
+                    if (word_lower in entity_word or entity_word in word_lower) and len(word_lower) >= 3:
+                        logger.debug(f"🚨 Fragment risk: '{word}' might be part of '{entity}'")
+                        return True
+        
+        return False

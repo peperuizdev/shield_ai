@@ -28,14 +28,12 @@ try:
 except Exception:
     PHONENUMBERS_AVAILABLE = False
 
-# Faker para datos sintéticos realistas
+# Import synthetic data generator
 try:
-    from faker import Faker
-    FAKER_AVAILABLE = True
-    fake = Faker('es_ES')  # Español para datos más realistas
+    from services.synthetic_data_generator import EnhancedSyntheticDataGenerator
+    SYNTHETIC_GENERATOR_AVAILABLE = True
 except Exception:
-    FAKER_AVAILABLE = False
-    fake = None
+    SYNTHETIC_GENERATOR_AVAILABLE = False
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
@@ -348,23 +346,17 @@ def collect_hf_matches(text: str, hf_model: str):
         
         orig_text = text[start:end]
         
-        # FILTRAR ENTIDADES DETECTADAS POR HF QUE SEAN DEMASIADO PEQUEÑAS
-        # Evitar fragmentos como 'ju', '+', 'garcia' (parte de email)
         if len(orig_text.strip()) < 3:
             continue
         
-        # Evitar detectar solo símbolos o números cortos
         if orig_text.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?']:
             continue
         
-        # Evitar fragmentos que parezcan parte de emails o URLs
         if '@' in text[max(0, start-10):min(len(text), end+10)]:
-            # Si está cerca de un @, probablemente es parte de un email
             continue
         
-        # Solo procesar si parece una entidad válida
         score = e.get('score', 0)
-        if score < 0.8:  # Solo entidades con alta confianza
+        if score < 0.8:
             continue
         
         label = _normalize_hf_label(e.get('entity_group') or e.get('entity'))
@@ -379,21 +371,16 @@ def collect_regex_matches(text: str):
         for m in re.finditer(pat, text):
             orig = text[m.start():m.end()]
             
-            # FILTRAR MATCHES REGEX DEMASIADO PEQUEÑOS O INVÁLIDOS
             if len(orig.strip()) < 2:
                 continue
             
-            # Evitar símbolos sueltos
             if orig.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?', '@']:
                 continue
             
-            # Para emails, verificar que sea un email válido completo
             if label == 'EMAIL':
-                # Debe tener @ y un dominio válido
                 if not '@' in orig or '.' not in orig.split('@')[-1]:
                     continue
             
-            # Para teléfonos, debe tener al menos 7 dígitos
             if label == 'PHONE':
                 digits = re.sub(r'[^\d]', '', orig)
                 if len(digits) < 7:
@@ -407,11 +394,9 @@ def resolve_matches(hf_matches, regex_matches):
     REGEX_ALWAYS = {'EMAIL', 'PHONE', 'CARD', 'IBAN', 'IP', 'BIOMETRIC', 'CREDENTIALS', 'COMBO'}
     SYNERGY = {'ID', 'DOB'}
 
-    # FILTRO FINAL: Eliminar matches inválidos antes del procesamiento
     filtered_hf = []
     for h in hf_matches:
         orig = h.get('orig', '')
-        # Filtrar entidades demasiado pequeñas o que son solo símbolos
         if len(orig.strip()) < 2 or orig.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?']:
             continue
         filtered_hf.append(h)
@@ -419,7 +404,6 @@ def resolve_matches(hf_matches, regex_matches):
     filtered_regex = []
     for r in regex_matches:
         orig = r.get('orig', '')
-        # Aplicar el mismo filtro a regex matches
         if len(orig.strip()) < 2 or orig.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?']:
             continue
         filtered_regex.append(r)
@@ -473,113 +457,34 @@ def resolve_matches(hf_matches, regex_matches):
     return chosen_sorted
 
 
-def generate_realistic_fake_data(label: str, original_value: str) -> str:
-    """
-    Generar datos falsos realistas usando Faker basado en el tipo de dato.
-    
-    Args:
-        label: Etiqueta del tipo de dato (PERSON, LOCATION, EMAIL, etc.)
-        original_value: Valor original para contexto
-        
-    Returns:
-        Dato falso realista
-    """
-    if not FAKER_AVAILABLE or not fake:
-        # Fallback a placeholders si Faker no está disponible
-        return f"[{label}_FAKE]"
-    
-    try:
-        label_upper = label.upper()
-        
-        if label_upper in ('PERSON', 'PER'):
-            # Generar nombre simple: solo nombre + apellido
-            return f"{fake.first_name()} {fake.last_name()}"
-        elif label_upper in ('LOCATION', 'LOC'):
-            return fake.city()
-        elif label_upper == 'ORG':
-            return fake.company()
-        elif '@' in original_value:  # Email detectado por regex
-            # Generar email simple usando nombres EN INGLÉS para evitar acentos y complejidad
-            try:
-                # Crear instancia temporal de Faker en inglés solo para emails
-                from faker import Faker
-                fake_en = Faker('en_US')
-                
-                first = fake_en.first_name().lower()
-                last = fake_en.last_name().lower()
-                
-                # Mantener el dominio original para coherencia
-                domain = original_value.split('@')[1] if '@' in original_value else 'gmail.com'
-                
-                # Limpiar caracteres especiales de nombres (solo alfanuméricos)
-                first = ''.join(c for c in first if c.isalnum())[:8]  # Máximo 8 caracteres
-                last = ''.join(c for c in last if c.isalnum())[:8]   # Máximo 8 caracteres
-                
-                # Validar que los nombres no estén vacíos
-                if not first or not last:
-                    return f"user{fake.random_int(100, 999)}@{domain}"
-                
-                return f"{first}.{last}@{domain}"
-            except Exception:
-                # Fallback seguro
-                domain = 'gmail.com'
-                try:
-                    domain = original_value.split('@')[1]
-                except:
-                    pass
-                return f"user{fake.random_int(100, 999)}@{domain}"
-        elif any(char.isdigit() for char in original_value) and ('+' in original_value or len(original_value.replace(' ', '')) >= 9):  # Teléfono
-            # Generar teléfono simple sin nombres complejos
-            return f"+34 {fake.random_int(600, 699)} {fake.random_int(100, 999)} {fake.random_int(100, 999)}"
-        elif label_upper in ('PHONE', 'TEL'):
-            # Generar teléfono simple sin nombres complejos
-            return f"+34 {fake.random_int(600, 699)} {fake.random_int(100, 999)} {fake.random_int(100, 999)}"
-        elif label_upper in ('CARD', 'CREDIT'):
-            return fake.credit_card_number()
-        elif label_upper == 'IBAN':
-            return fake.iban()
-        elif label_upper in ('DOB', 'DATE'):
-            return fake.date_of_birth().strftime('%d/%m/%Y')
-        elif label_upper == 'ID':
-            return fake.bothify(text='########?').upper()
-        else:
-            # Para otros tipos, generar identificador simple
-            first = fake.first_name()
-            # Limpiar y simplificar nombre
-            clean_name = ''.join(c for c in first if c.isalnum())[:6]
-            return f"{clean_name}_{fake.random_int(10, 99)}"
-            
-    except Exception:
-        # En caso de error, usar fallback
-        return f"[{label}_FAKE]"
-
-
 def apply_replacements_from_matches(original_text: str, matches: List[Dict], use_pseudo: bool = False, pseudo_key: str = None, use_realistic_fake: bool = False):
     anonymized = original_text
     mapping: Dict[str, str] = {}
     counters = {}
+    
+    if use_realistic_fake and SYNTHETIC_GENERATOR_AVAILABLE:
+        generator = EnhancedSyntheticDataGenerator()
+    else:
+        generator = None
+    
     for m in matches:
         start, end = m['start'], m['end']
         label = m['label']
         src = m.get('source', 'regex')
         orig = original_text[start:end]
         
-        # FILTRAR ENTIDADES PEQUEÑAS O INVÁLIDAS
-        # Evitar procesar fragmentos como '+', 'ju', etc.
         if len(orig.strip()) < 2:
             continue
         
-        # Evitar procesar solo caracteres especiales
         if orig.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}']:
             continue
         
-        # Para entidades HF, validar que sean palabras completas
         if src == 'hf' and len(orig.strip()) < 3:
             continue
         
-        # Evitar fragmentos que solo contengan números o símbolos
         if orig.strip().isdigit() and len(orig.strip()) < 4:
             continue
+            
         is_date_like = False
         if DATEUTIL_AVAILABLE:
             try:
@@ -601,12 +506,9 @@ def apply_replacements_from_matches(original_text: str, matches: List[Dict], use
             ns = 'R'
         counters[keylabel + ns] = counters.get(keylabel + ns, 0) + 1
         
-        # Generar reemplazo basado en el modo seleccionado
-        if use_realistic_fake:
-            # Modo datos falsos realistas con Faker
-            token = generate_realistic_fake_data(keylabel, orig)
+        if use_realistic_fake and generator:
+            token = generator.generate_synthetic_replacement(keylabel, orig)
         elif use_pseudo and src == 'regex':
-            # Modo pseudonymización con hash
             digest = pseudonymize_value(orig, pseudo_key) if pseudo_key else hashlib.sha256(orig.encode()).hexdigest()[:12]
             if '@' in orig:
                 prefix = re.sub(r"\W+", '_', orig.split('@', 1)[0])[:20]
@@ -614,7 +516,6 @@ def apply_replacements_from_matches(original_text: str, matches: List[Dict], use
                 prefix = keylabel.lower()
             token = f"{prefix}_{digest[:8]}"
         else:
-            # Modo placeholder tradicional
             token = f"[{keylabel}_{counters[keylabel + ns]}]"
             
         mapping[token] = orig
@@ -722,7 +623,6 @@ def cli(argv: List[str]):
     args = p.parse_args(argv)
 
     if args.interactive:
-        # Prompt the user for the PII fields requested by the user
         fields = [
             ("Nombre y apellidos", "Name"),
             ("Número de identificación (DNI/pasaporte/SSN/NIE)", "ID"),
@@ -843,7 +743,6 @@ def cli(argv: List[str]):
     p.print_help()
 
 
-# Allow CLI usage for backward compatibility when running module directly
 if __name__ == '__main__':
     import sys
     cli(sys.argv[1:])
