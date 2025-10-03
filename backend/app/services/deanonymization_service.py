@@ -25,7 +25,7 @@ STREAMING_DELAY_REALTIME = 0.3     # Delay para streaming real-time (segundos)
 
 logger = logging.getLogger(__name__)
 
-def set_streaming_speed(speed_level: str = "normal"):
+def set_streaming_speed(speed_level: str = "fast"):
     """
     Ajusta la velocidad del streaming dinámicamente.
     
@@ -580,9 +580,11 @@ async def generate_real_time_dual_stream(
         full_deanonymized_response = ""
         chunk_count = 0
         
-        # Inicializar el procesador de chunks CORREGIDO (versión segura)
+        # Inicializar el procesador de chunks OPTIMIZADO (versión balanceada para streaming)
         from services.chunk_deanonymizer import ChunkDeanonymizer
         chunk_processor = ChunkDeanonymizer(reverse_map)
+        
+        logger.info(f"🔧 ChunkDeanonymizer inicializado con {len(reverse_map)} entidades")
         
         # STREAMING REAL-TIME DEL LLM
         logger.info("🔥 Iniciando streaming real del LLM con buffer inteligente...")
@@ -603,6 +605,10 @@ async def generate_real_time_dual_stream(
             
             # Procesar chunk con buffer inteligente
             anonymous_output, deanonymized_output = chunk_processor.process_chunk(llm_chunk)
+            
+            # Debug logging cada 10 chunks para diagnóstico
+            if chunk_count % 10 == 0:
+                logger.debug(f"📊 Chunk {chunk_count}: in='{llm_chunk[:30]}...', anon_out='{anonymous_output[:30]}...', deanon_out='{deanonymized_output[:30]}...'")
             
             # Acumular para guardar después
             full_anonymous_response += llm_chunk
@@ -629,6 +635,9 @@ async def generate_real_time_dual_stream(
                     "is_real_time": True
                 }
                 yield f"data: {json.dumps(deanonymized_data)}\n\n"
+                logger.debug(f"📤 Enviado chunk deanonymizado #{chunk_count}: '{deanonymized_output[:30]}...'")
+            else:
+                logger.debug(f"⏳ Chunk #{chunk_count} sin output deanonymizado (esperando más contenido)")
             
             # Delay configurable para controlar la velocidad de streaming en el frontend
             await asyncio.sleep(STREAMING_DELAY_REALTIME)  # Configurable streaming speed
@@ -708,7 +717,7 @@ def create_test_mapping_for_debug() -> Dict[str, str]:
 
 def test_chunk_deanonymizer_fix():
     """
-    Prueba específica para validar la corrección del ChunkDeanonymizer.
+    Prueba específica para validar la corrección del ChunkDeanonymizer optimizado.
     """
     from services.chunk_deanonymizer import ChunkDeanonymizer
     
@@ -717,22 +726,38 @@ def test_chunk_deanonymizer_fix():
     processor = ChunkDeanonymizer(mapping)
     
     # Simular chunks como los recibe del LLM
-    chunks = ["Angel", "ina_", "80", ", para", " hacer", " una", " tortilla"]
+    chunks = ["Angel", "ina_", "80", ", para", " hacer", " una", " tortilla", " española."]
     
     results = []
-    for chunk in chunks:
+    full_deanonymized = ""
+    
+    logger.info(f"🧪 Testing ChunkDeanonymizer con mapping: {mapping}")
+    
+    for i, chunk in enumerate(chunks):
         anon_out, deanon_out = processor.process_chunk(chunk)
+        full_deanonymized += deanon_out
         results.append({
+            "chunk_index": i,
             "chunk": chunk,
             "anonymous": anon_out, 
-            "deanonymized": deanon_out
+            "deanonymized": deanon_out,
+            "deanon_length": len(deanon_out)
         })
+        logger.info(f"📝 Chunk {i}: '{chunk}' -> anon: '{anon_out}', deanon: '{deanon_out}'")
     
     # Finalizar
     _, final_content = processor.finalize()
+    full_deanonymized += final_content
+    
+    logger.info(f"🏁 Final content: '{final_content}'")
+    logger.info(f"📋 Full deanonymized text: '{full_deanonymized}'")
     
     return {
         "mapping_used": mapping,
         "chunk_results": results,
-        "final_content": final_content
+        "final_content": final_content,
+        "full_deanonymized_text": full_deanonymized,
+        "total_chunks": len(chunks),
+        "chunks_with_output": len([r for r in results if r["deanonymized"]]),
+        "optimization_applied": True
     }
