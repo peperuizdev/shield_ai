@@ -72,7 +72,7 @@ def set_streaming_speed(speed_level: str = "fast"):
     logger.info(f"🚀 Streaming speed set to '{speed_level}': {config}")
 
 # Configurar velocidad inicial (puedes cambiar esto)
-set_streaming_speed("normal")  # Actualmente configurado para "slow"
+set_streaming_speed("fast")  # Actualmente configurado para "slow"
 
 
 # =====================================================
