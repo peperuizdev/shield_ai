@@ -41,6 +41,9 @@ class ChunkDeanonymizer:
         self.input_buffer = ""
         self.last_sent_pos = 0
         
+        # ⭐ NUEVO: Flag para tracking de retención
+        self.was_retaining = False
+        
         # Separar entidades por tipo para tratamiento específico
         self.email_entities = {}      # Emails (requieren procesamiento especial)
         self.phone_entities = {}      # Teléfonos (requieren procesamiento especial)
@@ -68,6 +71,7 @@ class ChunkDeanonymizer:
     def process_chunk(self, chunk: str) -> Tuple[str, str]:
         """
         Versión STREAMING-FRIENDLY con procesamiento email-aware.
+        ⭐ NUEVO: Detección simple de fragmentos de palabras
         
         Args:
             chunk: Fragmento de texto del LLM
@@ -79,6 +83,25 @@ class ChunkDeanonymizer:
         self.input_buffer += chunk
         # ✅ SIEMPRE devolver el chunk original para el stream anonimizado
         anonymous_output = chunk
+        
+        # ⭐ NUEVO: Verificar si debemos retener por fragmentación de palabras
+        should_retain = self._should_retain_for_word_completion()
+        
+        # ⭐ NUEVO: Detectar transición de retención
+        just_stopped_retaining = self.was_retaining and not should_retain
+        
+        # ⭐ Actualizar estado de retención
+        self.was_retaining = should_retain
+        
+        if should_retain:
+            logger.debug(f"🔄 Retaining chunk - potential word fragmentation detected")
+            return anonymous_output, ""
+        
+        # ⭐ Si acabamos de salir de retención, usar procesamiento comprehensivo
+        if just_stopped_retaining:
+            logger.debug(f"🎯 Just stopped retaining - using comprehensive processing")
+            deanonymized_output = self._process_after_retention()
+            return anonymous_output, deanonymized_output
         
         # ESTRATEGIA BALANCEADA: Procesar según tipo de contenido
         
@@ -101,30 +124,44 @@ class ChunkDeanonymizer:
         # Deanonymizar todo el buffer usando procesamiento comprehensivo
         deanonymized_buffer = self._comprehensive_deanonymize(self.input_buffer)
         
-        # Enviar todo el contenido nuevo
+        # Calcular contenido nuevo desde la última posición enviada
         new_content = deanonymized_buffer[self.last_sent_pos:]
-        self.last_sent_pos = len(deanonymized_buffer)
         
-        logger.debug(f"📝 Complete sentence - sending: '{new_content[:50]}...'")
-        return new_content
+        # Solo enviar si hay contenido nuevo significativo
+        if new_content.strip():
+            # Actualizar posición al final del contenido deanonimizado
+            self.last_sent_pos += len(new_content)
+            
+            logger.debug(f"📝 Complete sentence - sending: '{new_content[:50]}...' (pos: {self.last_sent_pos})")
+            return new_content
+        
+        logger.debug("📝 Complete sentence - no new content to send")
+        return ""
+    
+    def _process_after_retention(self) -> str:
+        """
+        ⭐ NUEVO: Procesa después de salir de retención con deanonymización completa segura
+        """
+        # Deanonymizar todo el buffer
+        deanonymized_buffer = self._comprehensive_deanonymize(self.input_buffer)
+        
+        # Calcular contenido nuevo desde la última posición
+        new_content = deanonymized_buffer[self.last_sent_pos:]
+        
+        # Solo enviar si hay contenido nuevo significativo
+        if new_content.strip():
+            # ⭐ CLAVE: Actualizar posición basada en la longitud del contenido deanonimizado enviado
+            self.last_sent_pos += len(new_content)
+            
+            logger.debug(f"🎯 After retention - sending: '{new_content[:50]}...' (pos updated to: {self.last_sent_pos})")
+            return new_content
+        
+        logger.debug("🎯 After retention - no new content to send")
+        return ""
     
     def _process_partial_content(self) -> str:
-        """Procesa contenido parcial de forma menos conservadora - SOLO retorna deanonymized"""
-        
-        # Usar deanonymización segura para contenido parcial
-        deanonymized_buffer = self._safe_partial_deanonymize(self.input_buffer)
-        
-        # Estrategia más permisiva para contenido parcial
-        words = deanonymized_buffer[self.last_sent_pos:].split()
-        
-        if len(words) >= 3:  # Reducido de 4+ a 3+
-            # Enviar todas las palabras excepto la última (por si está cortada)
-            safe_content = ' '.join(words[:-1]) + ' '
-            self.last_sent_pos += len(safe_content)
-            
-            logger.debug(f"📦 Partial content - sending: '{safe_content[:50]}...'")
-            return safe_content
-        
+        """DESHABILITADO: Para evitar fragmentación, solo procesamos en puntos seguros"""
+        # No procesar contenido parcial para evitar fragmentación
         return ""
     
     def _comprehensive_deanonymize(self, text: str) -> str:
@@ -421,3 +458,79 @@ class ChunkDeanonymizer:
         
         logger.info(f"🏁 Finalizing - sending remaining: '{remaining[:100]}...'")
         return "", remaining
+    
+    def _should_retain_for_word_completion(self) -> bool:
+        """
+        ⭐ NUEVO: Verificar si debemos retener el chunk porque el final del buffer
+        podría ser el inicio de alguna palabra del mapping.
+        """
+        
+        # Obtener las últimas 50 caracteres del buffer para analizar
+        text_to_analyze = self.input_buffer[-50:]
+        
+        # Verificar contra todas las palabras del mapping
+        all_mapping_words = list(self.reverse_map.keys())
+        
+        for mapping_word in all_mapping_words:
+            # Verificar si el final del buffer es un prefijo de esta palabra del mapping
+            if self._is_partial_match_at_end(text_to_analyze, mapping_word):
+                logger.debug(f"🎯 Potential fragment detected: buffer ends with start of '{mapping_word}'")
+                return True
+        
+        return False
+    
+    def _word_just_completed(self) -> bool:
+        """
+        ⭐ NUEVO: Verificar si acabamos de completar una palabra del mapping
+        """
+        
+        # Obtener las últimas palabras del buffer para analizar
+        text_to_analyze = self.input_buffer[-100:]
+        
+        # Verificar si alguna palabra del mapping está ahora completa al final
+        all_mapping_words = list(self.reverse_map.keys())
+        
+        for mapping_word in all_mapping_words:
+            # Verificar si la palabra completa está presente
+            if mapping_word in text_to_analyze:
+                # Verificar que termina al final del buffer (no en el medio)
+                words_at_end = text_to_analyze.split()[-len(mapping_word.split()):]
+                reconstructed = ' '.join(words_at_end)
+                
+                if reconstructed == mapping_word:
+                    logger.debug(f"✅ Word just completed: '{mapping_word}'")
+                    return True
+        
+        return False
+    
+    def _is_partial_match_at_end(self, text: str, target_word: str) -> bool:
+        """
+        Verificar si el final del texto es un prefijo parcial de target_word.
+        
+        Ejemplos:
+        - text="completo:** Leó", target_word="León Sancho-Miranda" → True
+        - text="Hola Juan", target_word="Juan García" → True  
+        - text="Hola mundo", target_word="León Sancho-Miranda" → False
+        """
+        
+        # Extraer palabras del final del texto (hasta 4 palabras)
+        words_in_text = text.split()[-4:]  # Últimas 4 palabras
+        
+        if not words_in_text:
+            return False
+        
+        # Probar diferentes combinaciones de palabras del final
+        for i in range(len(words_in_text)):
+            partial_text = ' '.join(words_in_text[i:])
+            
+            # Verificar si esta parte del texto es un prefijo de target_word
+            if target_word.startswith(partial_text):
+                # Asegurarse de que no es la palabra completa (eso no es fragmentación)
+                if partial_text != target_word:
+                    # Añadir verificación adicional para reducir falsos positivos
+                    # Solo considerar fragmentación si el prefijo es sustancial
+                    if len(partial_text) >= 2:  # Al menos 2 caracteres
+                        logger.debug(f"✅ Fragment match: '{partial_text}' is prefix of '{target_word}'")
+                        return True
+        
+        return False
