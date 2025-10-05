@@ -2,11 +2,13 @@
 FastAPI application configuration and setup for Shield AI.
 
 Creates the main FastAPI application instance with middleware,
-CORS configuration, and global exception handlers.
+CORS configuration, global exception handlers, and automatic Redis startup in development.
 """
 
 import logging
 import time
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from typing import Dict, Any
 
@@ -29,6 +31,116 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def ensure_redis_docker_running():
+    """
+    Ensure Redis Docker container is running (SOLO para desarrollo).
+    
+    Returns:
+        bool: True if Redis is running or was started successfully
+    """
+    # Solo en desarrollo
+    if not is_development():
+        logger.info("Production mode: skipping automatic Redis Docker startup")
+        return True
+    
+    container_name = "shieldai-redis-dev"
+    
+    try:
+        logger.info("🔍 Checking if Redis Docker container is running...")
+        
+        # 1. Verificar si Docker está disponible
+        try:
+            subprocess.run(
+                ["docker", "--version"],
+                capture_output=True,
+                check=True,
+                timeout=5
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            logger.warning("⚠️  Docker no está disponible. Asegúrate de tener Docker Desktop abierto.")
+            logger.warning("⚠️  O inicia Redis manualmente: docker run -d -p 6379:6379 --name shieldai-redis-dev redis:alpine")
+            return False
+        
+        # 2. Verificar si el contenedor está corriendo
+        result = subprocess.run(
+            ["docker", "ps", "--filter", f"name={container_name}", "--filter", "status=running", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if container_name in result.stdout:
+            logger.info(f"✅ Redis container '{container_name}' is already running")
+            return True
+        
+        # 3. Verificar si el contenedor existe pero está parado
+        result = subprocess.run(
+            ["docker", "ps", "-a", "--filter", f"name={container_name}", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if container_name in result.stdout:
+            # Contenedor existe pero está parado, iniciarlo
+            logger.info(f"🔧 Starting existing Redis container '{container_name}'...")
+            subprocess.run(
+                ["docker", "start", container_name],
+                check=True,
+                timeout=10
+            )
+            logger.info(f"✅ Redis container '{container_name}' started successfully")
+        else:
+            # Contenedor no existe, crearlo
+            logger.info(f"🔧 Creating new Redis container '{container_name}'...")
+            subprocess.run([
+                "docker", "run", "-d",
+                "--name", container_name,
+                "-p", "6379:6379",
+                "--restart", "unless-stopped",
+                "redis:alpine"
+            ], check=True, timeout=30)
+            logger.info(f"✅ Redis container '{container_name}' created and started successfully")
+        
+        # 4. Esperar a que Redis esté listo
+        logger.info("⏳ Waiting for Redis to be ready...")
+        max_retries = 10
+        for i in range(max_retries):
+            try:
+                result = subprocess.run(
+                    ["docker", "exec", container_name, "redis-cli", "ping"],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                if "PONG" in result.stdout:
+                    logger.info("✅ Redis is ready and responding to PING")
+                    return True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                pass
+            
+            if i < max_retries - 1:
+                time.sleep(0.5)
+        
+        logger.warning("⚠️  Redis container started but not responding to PING")
+        return True  # Continuar de todas formas
+        
+    except subprocess.CalledProcessError as e:
+        logger.error(f"❌ Failed to start Redis container: {e}")
+        logger.error(f"   Command output: {e.stdout if hasattr(e, 'stdout') else 'N/A'}")
+        logger.error(f"   Command error: {e.stderr if hasattr(e, 'stderr') else 'N/A'}")
+        logger.error("💡 Solution: Start Docker Desktop or run Redis manually:")
+        logger.error(f"   docker run -d -p 6379:6379 --name {container_name} redis:alpine")
+        return False
+    except subprocess.TimeoutExpired:
+        logger.error("❌ Docker command timed out")
+        logger.error("💡 Make sure Docker Desktop is running")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Unexpected error starting Redis: {e}")
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -36,26 +148,92 @@ async def lifespan(app: FastAPI):
     
     Handles startup and shutdown events for the FastAPI application.
     """
-    # Startup
+    # ==================== STARTUP ====================
     logger.info("Starting Shield AI application...")
+    logger.info(f"Environment: {settings.environment}")
+    logger.info(f"Debug mode: {settings.debug}")
     
-    # Test Redis connection on startup
+    # En desarrollo, intentar levantar Redis automáticamente
+    if is_development():
+        logger.info("🐳 Development mode: Ensuring Redis Docker container is running...")
+        redis_docker_ok = ensure_redis_docker_running()
+        
+        if not redis_docker_ok:
+            logger.error("=" * 60)
+            logger.error("❌ REDIS DOCKER STARTUP FAILED")
+            logger.error("=" * 60)
+            logger.error("")
+            logger.error("The application cannot start without Redis.")
+            logger.error("")
+            logger.error("Please do ONE of the following:")
+            logger.error("  1. Start Docker Desktop")
+            logger.error("  2. Run Redis manually:")
+            logger.error("     docker run -d -p 6379:6379 --name shieldai-redis-dev redis:alpine")
+            logger.error("  3. Install Redis locally (not recommended)")
+            logger.error("")
+            logger.error("=" * 60)
+            sys.exit(1)  # Detener la aplicación
+    
+    # Test Redis connection
     try:
+        logger.info("🔗 Testing Redis connection...")
         health = get_redis_health()
+        
         if health["status"] == "healthy":
-            logger.info("Redis connection established successfully")
+            logger.info("✅ Redis connection established successfully")
+            logger.info(f"   Redis version: {health.get('redis_info', {}).get('version', 'unknown')}")
+            logger.info(f"   Connected clients: {health.get('redis_info', {}).get('connected_clients', 0)}")
         else:
-            logger.warning(f"Redis health check issues: {health.get('error', 'Unknown error')}")
+            logger.error("❌ Redis health check failed")
+            logger.error(f"   Error: {health.get('error', 'Unknown error')}")
+            
+            if is_development():
+                logger.error("")
+                logger.error("Redis container is running but not responding.")
+                logger.error("Try restarting it:")
+                logger.error("  docker restart shieldai-redis-dev")
+                logger.error("")
+                sys.exit(1)
+            else:
+                logger.warning("⚠️  Continuing despite Redis issues (production mode)")
+                
     except Exception as e:
-        logger.error(f"Failed to connect to Redis on startup: {str(e)}")
+        logger.error(f"❌ Failed to connect to Redis: {str(e)}")
+        
+        if is_development():
+            logger.error("")
+            logger.error("Could not connect to Redis at localhost:6379")
+            logger.error("Make sure Redis container is running:")
+            logger.error("  docker ps | grep redis")
+            logger.error("")
+            sys.exit(1)
+        else:
+            logger.warning("⚠️  Continuing despite Redis connection error (production mode)")
     
-    logger.info("Shield AI application started successfully")
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("✅ Shield AI application started successfully")
+    logger.info("=" * 60)
+    logger.info(f"📍 API: http://localhost:{settings.api_port}")
+    logger.info(f"📚 Docs: http://localhost:{settings.api_port}/docs")
+    logger.info("=" * 60)
+    logger.info("")
     
     yield
     
-    # Shutdown
+    # ==================== SHUTDOWN ====================
+    logger.info("")
+    logger.info("=" * 60)
     logger.info("Shutting down Shield AI application...")
-    logger.info("Shield AI application shut down complete")
+    logger.info("=" * 60)
+    
+    # En desarrollo, informar que Redis sigue corriendo
+    if is_development():
+        logger.info("💡 Redis container is still running for faster next startup")
+        logger.info("   To stop it manually: docker stop shieldai-redis-dev")
+    
+    logger.info("✅ Shield AI application shut down complete")
+    logger.info("=" * 60)
 
 
 def create_app() -> FastAPI:
