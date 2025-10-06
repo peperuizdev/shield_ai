@@ -473,11 +473,111 @@ def get_llm_response(session_id: str) -> Optional[str]:
         llm_response = manager.redis_client.get(llm_key)
         
         if llm_response:
-            return llm_response.decode('utf-8')
+            # Si ya es string, no necesita decode. Si es bytes, sí necesita decode.
+            if isinstance(llm_response, bytes):
+                return llm_response.decode('utf-8')
+            else:
+                return llm_response  # Ya es string
         return None
         
     except Exception as e:
         logger.error(f"Error retrieving LLM response for session {session_id}: {e}")
+        return None
+
+def store_anonymized_request(session_id: str, anonymized_text: str, ttl_seconds: int = None) -> bool:
+    """
+    Store anonymized request text that was sent to the LLM.
+    
+    Args:
+        session_id (str): Session identifier
+        anonymized_text (str): Anonymized text sent to LLM
+        ttl_seconds (int, optional): TTL in seconds
+        
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    manager = get_session_manager()
+    try:
+        # Store anonymized request in a separate key
+        request_key = f"{manager.key_prefix}:request:{session_id}"
+        
+        # Use provided TTL or default
+        ttl = ttl_seconds or manager.default_ttl
+        
+        logger.info(f"💾 DEBUG STORE: Storing anonymized request")
+        logger.info(f"💾 DEBUG STORE: Session ID: {session_id}")
+        logger.info(f"💾 DEBUG STORE: Request key: {request_key}")
+        logger.info(f"💾 DEBUG STORE: Text length: {len(anonymized_text)}")
+        logger.info(f"💾 DEBUG STORE: TTL: {ttl}")
+        logger.info(f"💾 DEBUG STORE: Text preview: {anonymized_text[:100]}...")
+        
+        # Store the anonymized request
+        result = manager.redis_client.setex(request_key, ttl, anonymized_text)
+        logger.info(f"💾 DEBUG STORE: Redis setex result: {result}")
+        
+        # Verify it was stored
+        verify = manager.redis_client.get(request_key)
+        logger.info(f"💾 DEBUG STORE: Verification - exists: {verify is not None}")
+        
+        logger.info(f"✅ Anonymized request stored successfully for session {session_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error storing anonymized request for session {session_id}: {e}")
+        import traceback
+        logger.error(f"❌ Full traceback: {traceback.format_exc()}")
+        return False
+
+def get_anonymized_request(session_id: str) -> Optional[str]:
+    """
+    Retrieve anonymized request text for a session.
+    
+    Args:
+        session_id (str): Session identifier
+        
+    Returns:
+        Optional[str]: Anonymized request text or None if not found
+    """
+    manager = get_session_manager()
+    try:
+        request_key = f"{manager.key_prefix}:request:{session_id}"
+        
+        logger.info(f"🔍 DEBUG GET: Retrieving anonymized request")
+        logger.info(f"🔍 DEBUG GET: Session ID: {session_id}")
+        logger.info(f"🔍 DEBUG GET: Request key: {request_key}")
+        
+        # Check if key exists
+        exists = manager.redis_client.exists(request_key)
+        logger.info(f"🔍 DEBUG GET: Key exists: {exists}")
+        
+        # Get TTL
+        ttl = manager.redis_client.ttl(request_key)
+        logger.info(f"🔍 DEBUG GET: TTL: {ttl}")
+        
+        anonymized_text = manager.redis_client.get(request_key)
+        logger.info(f"🔍 DEBUG GET: Raw data type: {type(anonymized_text)}")
+        logger.info(f"🔍 DEBUG GET: Raw data exists: {anonymized_text is not None}")
+        
+        if anonymized_text:
+            # Si ya es string, no necesita decode. Si es bytes, sí necesita decode.
+            if isinstance(anonymized_text, bytes):
+                decoded = anonymized_text.decode('utf-8')
+                logger.info(f"🔍 DEBUG GET: Decoded from bytes to string")
+            else:
+                decoded = anonymized_text  # Ya es string
+                logger.info(f"🔍 DEBUG GET: Already a string, no decoding needed")
+            
+            logger.info(f"🔍 DEBUG GET: Final text length: {len(decoded)}")
+            logger.info(f"🔍 DEBUG GET: Final text preview: {decoded[:100]}...")
+            return decoded
+        
+        logger.warning(f"🔍 DEBUG GET: No data found for key {request_key}")
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Error retrieving anonymized request for session {session_id}: {e}")
+        import traceback
+        logger.error(f"❌ Full traceback: {traceback.format_exc()}")
         return None
 
 __all__ = [
@@ -491,5 +591,7 @@ __all__ = [
     "list_active_sessions",
     "cleanup_expired_sessions",
     "store_llm_response",
-    "get_llm_response"
+    "get_llm_response",
+    "store_anonymized_request",
+    "get_anonymized_request"
 ]

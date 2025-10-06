@@ -12,7 +12,68 @@ import time
 from typing import Dict, List, Any, AsyncGenerator
 from .session_manager import get_anonymization_map, store_anonymization_map
 
+# =====================================================
+# CONFIGURACIÓN DE STREAMING
+# =====================================================
+# Ajusta estos valores para controlar la velocidad del streaming en el frontend
+# Valores más altos = streaming más lento y mejor visualización
+# Valores más bajos = streaming más rápido
+STREAMING_DELAY_DUMMY = 0.8        # Delay para dummy LLM responses (segundos)
+STREAMING_DELAY_DEANONYMIZED = 0.4 # Delay para streaming deanonymizado (segundos)  
+STREAMING_DELAY_CHAT = 0.5         # Delay para chat dual stream (segundos)
+STREAMING_DELAY_REALTIME = 0.3     # Delay para streaming real-time (segundos)
+
 logger = logging.getLogger(__name__)
+
+def set_streaming_speed(speed_level: str = "normal"):
+    """
+    Ajusta la velocidad del streaming dinámicamente.
+    
+    Args:
+        speed_level: "fast", "normal", "slow", "very_slow"
+    """
+    global STREAMING_DELAY_DUMMY, STREAMING_DELAY_DEANONYMIZED, STREAMING_DELAY_CHAT, STREAMING_DELAY_REALTIME
+    
+    speed_configs = {
+        "fast": {
+            "dummy": 0.1,
+            "deanonymized": 0.1, 
+            "chat": 0.1,
+            "realtime": 0.05
+        },
+        "normal": {
+            "dummy": 0.3,
+            "deanonymized": 0.2,
+            "chat": 0.2, 
+            "realtime": 0.1
+        },
+        "slow": {
+            "dummy": 0.8,
+            "deanonymized": 0.4,
+            "chat": 0.5,
+            "realtime": 0.3
+        },
+        "very_slow": {
+            "dummy": 1.2,
+            "deanonymized": 0.6,
+            "chat": 0.8,
+            "realtime": 0.5
+        }
+    }
+    
+    config = speed_configs.get(speed_level, speed_configs["normal"])
+    
+    STREAMING_DELAY_DUMMY = config["dummy"]
+    STREAMING_DELAY_DEANONYMIZED = config["deanonymized"]
+    STREAMING_DELAY_CHAT = config["chat"] 
+    STREAMING_DELAY_REALTIME = config["realtime"]
+    
+
+    logger.info(f"🚀 Streaming speed set to '{speed_level}': {config}")
+
+# Configurar velocidad inicial (puedes cambiar esto)
+set_streaming_speed("normal")  # Actualmente configurado para "slow"
+
 
 # =====================================================
 # DUMMY DATA FUNCTIONS (FOR TESTING)
@@ -60,7 +121,7 @@ async def dummy_llm_response_stream(prompt: str) -> AsyncGenerator[str, None]:
     ]
     
     for word in response_words:
-        await asyncio.sleep(0.3)  # Slower streaming for better UX
+        await asyncio.sleep(STREAMING_DELAY_DUMMY)  # Configurable streaming speed
         yield word
 
 # =====================================================
@@ -72,18 +133,23 @@ def create_reverse_map(anonymization_map: Dict[str, str]) -> Dict[str, str]:
     Create reverse mapping for deanonymization.
     
     Args:
-        anonymization_map: Dictionary mapping pseudonym -> original data (from PII pipeline)
+        anonymization_map: Dictionary mapping fake_data -> original_data (from PII pipeline)
         
     Returns:
-        Dictionary mapping pseudonym -> original data (same as input, no inversion needed)
+        Dictionary mapping fake_data -> original_data (same as input, ready for deanonymization)
     """
-    # El mapping del pipeline PII ya viene como pseudonym -> original
-    # No necesitamos invertirlo
+    # El mapping del pipeline PII viene como fake_data -> original_data
+    # Ejemplo: {'[PERSON_1]': 'Juan Pérez', '[LOCATION_1]': 'Madrid'}
+    # Esto es exactamente lo que necesitamos para deanonymize_text()
+    
+    logger.debug(f"🔧 Create reverse map input: {anonymization_map}")
+    logger.debug(f"🔧 Create reverse map output (sin cambios): {anonymization_map}")
     return anonymization_map
 
 def deanonymize_text(text: str, reverse_map: Dict[str, str]) -> str:
     """
     Replace fake data with original data in text.
+    Enhanced to handle partial name matches.
     
     Args:
         text: Text containing fake data
@@ -96,8 +162,45 @@ def deanonymize_text(text: str, reverse_map: Dict[str, str]) -> str:
     # Sort by length (descending) to avoid partial replacements
     sorted_items = sorted(reverse_map.items(), key=lambda x: len(x[0]), reverse=True)
     
+    logger.debug(f"🔄 Deanonymizing text: {repr(text[:100])}...")
+    logger.debug(f"🔄 Using reverse_map: {reverse_map}")
+    
+    replacements_made = []
+    
+    # First pass: exact matches
     for fake_data, original_data in sorted_items:
-        result = result.replace(fake_data, original_data)
+        if fake_data in result:
+            result = result.replace(fake_data, original_data)
+            replacements_made.append(f"'{fake_data}' -> '{original_data}' (exact)")
+    
+    # Second pass: partial matches for names (if no exact matches found for this chunk)
+    if not replacements_made:
+        for fake_data, original_data in sorted_items:
+            # Check if fake_data appears to be a person name (contains space)
+            if ' ' in fake_data:
+                # Split fake name into parts and check if any significant part is in the text
+                fake_parts = fake_data.split()
+                for i in range(len(fake_parts)):
+                    for j in range(i + 1, len(fake_parts) + 1):
+                        partial_name = ' '.join(fake_parts[i:j])
+                        # Only consider partial matches if they're at least 2 words or a long single word
+                        if len(partial_name) >= 6 and partial_name in result:
+                            # Replace the partial name with corresponding part of original name
+                            original_parts = original_data.split()
+                            if len(original_parts) >= len(fake_parts[i:j]):
+                                partial_original = ' '.join(original_parts[i:j])
+                                result = result.replace(partial_name, partial_original)
+                                replacements_made.append(f"'{partial_name}' -> '{partial_original}' (partial)")
+                                break
+                if replacements_made:
+                    break
+    
+    if replacements_made:
+        logger.debug(f"✅ Replacements made: {replacements_made}")
+    else:
+        logger.debug(f"⚠️ No replacements made in text: {repr(text[:50])}")
+    
+    logger.debug(f"🔄 Deanonymized result: {repr(result[:100])}...")
     
     return result
 
@@ -131,7 +234,7 @@ async def deanonymize_streaming_text(text_stream: AsyncGenerator[str, None],
                 yield word + " "
             buffer = words[-1]  # Keep last word in buffer
         
-        await asyncio.sleep(0.1)  # Slower streaming for better UX
+        await asyncio.sleep(STREAMING_DELAY_DEANONYMIZED)  # Configurable streaming speed
     
     # Yield remaining buffer
     if buffer:
@@ -408,8 +511,8 @@ async def generate_chat_dual_stream(session_id: str, llm_response: str, mapping:
                 }
                 yield f"data: {json.dumps(deanonymized_data)}\n\n"
             
-            # Small delay to simulate real streaming
-            await asyncio.sleep(0.1)
+            # Configurable delay for frontend visualization
+            await asyncio.sleep(STREAMING_DELAY_CHAT)
         
         # Send completion signal
         completion_data = {
@@ -429,3 +532,207 @@ async def generate_chat_dual_stream(session_id: str, llm_response: str, mapping:
             "session_id": session_id
         }
         yield f"data: {json.dumps(error_data)}\n\n"
+
+
+async def generate_real_time_dual_stream(
+    session_id: str, 
+    llm_prompt: str, 
+    mapping: Dict[str, str], 
+    llm_client
+) -> AsyncGenerator[str, None]:
+    """
+    Generate dual stream from REAL-TIME LLM streaming with live deanonymization.
+    
+    Args:
+        session_id: Session ID for tracking
+        llm_prompt: Prompt to send to LLM (with anonymized data)
+        mapping: Anonymization mapping (original -> fake)
+        llm_client: LLMClientPropuesta instance with streaming capability
+        
+    Yields:
+        str: SSE formatted data with both anonymous and deanonymized chunks in real-time
+    """
+    try:
+        import asyncio
+        
+        # Create reverse map for deanonymization
+        reverse_map = create_reverse_map(mapping)
+        
+        logger.info(f"🚀 INICIANDO STREAMING REAL-TIME para sesión: {session_id}")
+        logger.info(f"📤 LLM Prompt (anonimizado): {llm_prompt[:100]}...")
+        logger.info(f"🔄 Mapping entities: {len(mapping)} entidades")
+        logger.info(f"🗺️ Original mapping: {mapping}")
+        logger.info(f"🔄 Reverse map for deanonymization: {reverse_map}")
+        
+        # Send initial metadata
+        metadata = {
+            "type": "metadata",
+            "session_id": session_id,
+            "pii_detected": bool(mapping),
+            "entity_count": len(mapping),
+            "streaming": "real-time",
+            "llm_prompt_preview": llm_prompt[:100] + "..." if len(llm_prompt) > 100 else llm_prompt
+        }
+        yield f"data: {json.dumps(metadata)}\n\n"
+        
+        # Variables para acumular texto completo para guardar en Redis después
+        full_anonymous_response = ""
+        full_deanonymized_response = ""
+        chunk_count = 0
+        
+        # Inicializar el procesador de chunks CORREGIDO (versión segura)
+        from services.chunk_deanonymizer import ChunkDeanonymizer
+        chunk_processor = ChunkDeanonymizer(reverse_map)
+        
+        # STREAMING REAL-TIME DEL LLM
+        logger.info("🔥 Iniciando streaming real del LLM con buffer inteligente...")
+        
+        async for llm_chunk in llm_client.call_grok_stream(llm_prompt, temperature=0.1):
+            chunk_count += 1
+            
+            # Verificar si es un mensaje de error
+            if llm_chunk.startswith("[ERROR:"):
+                error_data = {
+                    "type": "error",
+                    "error": llm_chunk,
+                    "session_id": session_id,
+                    "chunk_count": chunk_count
+                }
+                yield f"data: {json.dumps(error_data)}\n\n"
+                return
+            
+            # Procesar chunk con buffer inteligente
+            anonymous_output, deanonymized_output = chunk_processor.process_chunk(llm_chunk)
+            
+            # Acumular para guardar después
+            full_anonymous_response += llm_chunk
+            full_deanonymized_response += deanonymized_output
+            
+            # Enviar chunk anonimizado (lo que vio el LLM - datos falsos)
+            anonymous_data = {
+                "type": "anonymous",
+                "chunk": anonymous_output,
+                "session_id": session_id,
+                "chunk_index": chunk_count,
+                "is_real_time": True
+            }
+            yield f"data: {json.dumps(anonymous_data)}\n\n"
+            
+            # Enviar chunk deanonymizado (lo que ve el usuario - datos reales)
+            # Solo enviar si hay contenido para evitar chunks vacíos
+            if deanonymized_output:
+                deanonymized_data = {
+                    "type": "deanonymized", 
+                    "chunk": deanonymized_output,
+                    "session_id": session_id,
+                    "chunk_index": chunk_count,
+                    "is_real_time": True
+                }
+                yield f"data: {json.dumps(deanonymized_data)}\n\n"
+            
+            # Delay configurable para controlar la velocidad de streaming en el frontend
+            await asyncio.sleep(STREAMING_DELAY_REALTIME)  # Configurable streaming speed
+            
+            # Log progreso cada 10 chunks
+            if chunk_count % 10 == 0:
+                logger.info(f"📊 Procesados {chunk_count} chunks en tiempo real")
+        
+        # Finalizar procesamiento y enviar cualquier texto pendiente
+        _, final_deanonymized = chunk_processor.finalize()
+        if final_deanonymized:
+            full_deanonymized_response += final_deanonymized
+            final_data = {
+                "type": "deanonymized",
+                "chunk": final_deanonymized,
+                "session_id": session_id,
+                "chunk_index": chunk_count + 1,
+                "is_real_time": True,
+                "is_final": True
+            }
+            yield f"data: {json.dumps(final_data)}\n\n"
+        
+        # Guardar respuesta completa en Redis para consultas posteriores
+        logger.info(f"💾 Guardando respuesta completa en Redis ({len(full_anonymous_response)} chars)")
+        try:
+            from services.session_manager import store_llm_response
+            store_llm_response(session_id, full_anonymous_response)
+        except Exception as e:
+            logger.warning(f"⚠️ No se pudo guardar respuesta LLM en Redis: {e}")
+        
+        # Send completion signal
+        completion_data = {
+            "type": "complete",
+            "session_id": session_id,
+            "total_chunks": chunk_count,
+            "entities_replaced": len(reverse_map),
+            "anonymous_response_length": len(full_anonymous_response),
+            "deanonymized_response_length": len(full_deanonymized_response),
+            "streaming_type": "real-time",
+            "anonymous_text": full_anonymous_response,
+            "deanonymized_text": full_deanonymized_response
+        }
+        yield f"data: {json.dumps(completion_data)}\n\n"
+        
+        logger.info(f"✅ STREAMING REAL-TIME COMPLETADO - {chunk_count} chunks procesados")
+        
+    except Exception as e:
+        logger.error(f"❌ Error en streaming real-time: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        
+        error_data = {
+            "type": "error",
+            "error": str(e),
+            "session_id": session_id,
+            "streaming_type": "real-time",
+            "traceback": traceback.format_exc()
+        }
+        yield f"data: {json.dumps(error_data)}\n\n"
+
+# =====================================================
+# DEBUG FUNCTIONS FOR SPECIFIC ISSUES
+# =====================================================
+
+def create_test_mapping_for_debug() -> Dict[str, str]:
+    """
+    Crea un mapping de prueba con el problema específico reportado.
+    
+    Returns:
+        Dict con el mapping problemático para debugging
+    """
+    return {
+        "Angelina_80": "Heraclio Garcés-Lara",  # El mapping problemático reportado
+        "Valencia": "Madrid", 
+        "612 345 678": "666 777 888"
+    }
+
+def test_chunk_deanonymizer_fix():
+    """
+    Prueba específica para validar la corrección del ChunkDeanonymizer.
+    """
+    from services.chunk_deanonymizer import ChunkDeanonymizer
+    
+    # Mapping problemático
+    mapping = create_test_mapping_for_debug()
+    processor = ChunkDeanonymizer(mapping)
+    
+    # Simular chunks como los recibe del LLM
+    chunks = ["Angel", "ina_", "80", ", para", " hacer", " una", " tortilla"]
+    
+    results = []
+    for chunk in chunks:
+        anon_out, deanon_out = processor.process_chunk(chunk)
+        results.append({
+            "chunk": chunk,
+            "anonymous": anon_out, 
+            "deanonymized": deanon_out
+        })
+    
+    # Finalizar
+    _, final_content = processor.finalize()
+    
+    return {
+        "mapping_used": mapping,
+        "chunk_results": results,
+        "final_content": final_content
+    }
