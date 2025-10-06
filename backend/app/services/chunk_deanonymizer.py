@@ -47,26 +47,139 @@ class ChunkDeanonymizer:
         # Separar entidades por tipo para tratamiento específico
         self.email_entities = {}      # Emails (requieren procesamiento especial)
         self.phone_entities = {}      # Teléfonos (requieren procesamiento especial)
+        self.iban_entities = {}      # 🆕 NUEVA CATEGORÍA PARA IBANs
         self.simple_entities = {}     # Palabras simples
         self.complex_entities = {}    # Nombres multi-palabra largos
         
         for fake, real in reverse_map.items():
             if '@' in fake:  # ⭐ DETECTAR EMAILS
                 self.email_entities[fake] = real
-            elif self._is_phone_number(fake):  # ⭐ DETECCIÓN MEJORADA DE TELÉFONOS
+            elif self._is_iban(fake):  # 🆕 IBAN ANTES QUE TELÉFONOS (prioridad)
+                self.iban_entities[fake] = real
+            elif self._is_phone_number(fake):  # ⭐ DETECCIÓN DE TELÉFONOS
                 self.phone_entities[fake] = real
             elif ' ' in fake and len(fake.split()) >= 3:
                 self.complex_entities[fake] = real
             else:
                 self.simple_entities[fake] = real
                 
-        logger.info(f"🔧 Emails: {len(self.email_entities)}, Phones: {len(self.phone_entities)}, Simple: {len(self.simple_entities)}, Complex: {len(self.complex_entities)}")
+        logger.info(f"🔧 Emails: {len(self.email_entities)}, Phones: {len(self.phone_entities)}, IBANs: {len(self.iban_entities)}, Simple: {len(self.simple_entities)}, Complex: {len(self.complex_entities)}")
         
         # ⭐ LOGGING DETALLADO DEL MAPPING PARA DEBUGGING
         logger.debug(f"🔍 MAPPING DETALLADO:")
         for fake, real in reverse_map.items():
-            entity_type = "EMAIL" if '@' in fake else "PHONE" if self._is_phone_number(fake) else "SIMPLE" if ' ' not in fake else "COMPLEX"
+            if '@' in fake:
+                entity_type = "EMAIL"
+            elif self._is_iban(fake):
+                entity_type = "IBAN"
+            elif self._is_phone_number(fake):
+                entity_type = "PHONE"
+            elif ' ' in fake and len(fake.split()) >= 3:
+                entity_type = "COMPLEX"
+            else:
+                entity_type = "SIMPLE"
             logger.debug(f"  [{entity_type}] '{fake}' -> '{real}'")
+
+    def _is_iban(self, text: str) -> bool:
+        """🆕 NUEVA: Detección de números IBAN mejorada"""
+        # Limpiar espacios para análisis
+        clean_text = text.replace(' ', '').replace('-', '')
+        
+        # Verificación básica: longitud mínima y formato
+        if (len(clean_text) < 10 or                     # Mínimo 10 caracteres (era 8)
+            not clean_text[:2].isalpha() or             # 2 letras país
+            not clean_text[2:4].isdigit()):             # 2 dígitos control
+            return False
+        
+        # Patrones para diferentes tipos de IBAN
+        iban_patterns = [
+            r'^ES\d{20,22}$',                           # IBAN español: ES + 20-22 dígitos
+            r'^ES\d{2}\s?\d{3}\s?\d{3}\s?\d{3}$',        # IBAN español corto: ES947 493 487
+            r'^[A-Z]{2}\d{2}[A-Z0-9]{15,30}$',          # IBAN genérico completo
+            r'^[A-Z]{2}\d{2}[A-Z0-9]{8,15}$',           # IBAN genérico medio
+        ]
+        
+        for pattern in iban_patterns:
+            if re.match(pattern, clean_text):
+                return True
+        
+        # Verificación adicional para IBANs con espacios (formato estándar)
+        if ' ' in text:
+            # Verificar formato de 4 caracteres por grupo
+            parts = text.split(' ')
+            if len(parts) >= 3:  # Al menos 3 grupos
+                first_part = parts[0]  # Ej: "ES91"
+                if (len(first_part) == 4 and 
+                    first_part[:2].isalpha() and 
+                    first_part[2:].isdigit()):
+                    # Verificar que los siguientes grupos sean numéricos
+                    remaining_numeric = all(part.isdigit() for part in parts[1:] if part)
+                    return remaining_numeric
+        
+        return False
+
+    def _smart_iban_replacement(self, text: str, fake_iban: str, real_iban: str) -> str:
+        """🆕 NUEVA: Reemplazo inteligente para IBANs con diferentes formatos de espacios"""
+        original_text = text
+        
+        # 1. Intentar reemplazo directo (más confiable)
+        if fake_iban in text:
+            result = text.replace(fake_iban, real_iban)
+            logger.debug(f"✅ IBAN direct replacement: '{fake_iban}' -> '{real_iban}'")
+            return result
+        
+        # 2. Normalizar espacios y reintentar
+        fake_normalized = self._normalize_iban_format(fake_iban)
+        real_normalized = self._normalize_iban_format(real_iban)
+        
+        if fake_normalized in text and fake_normalized != fake_iban:
+            result = text.replace(fake_normalized, real_normalized)
+            logger.debug(f"✅ IBAN normalized replacement: '{fake_normalized}' -> '{real_normalized}'")
+            return result
+        
+        # 3. Buscar formato sin espacios (solo si es seguro)
+        fake_no_spaces = fake_iban.replace(' ', '').replace('-', '')
+        real_no_spaces = real_iban.replace(' ', '').replace('-', '')
+        text_no_spaces = text.replace(' ', '').replace('-', '')
+        
+        if (fake_no_spaces in text_no_spaces and 
+            len(fake_no_spaces) >= 15):  # Solo IBANs suficientemente largos
+            result_no_spaces = text_no_spaces.replace(fake_no_spaces, real_no_spaces)
+            
+            # Restaurar espacios en el resultado si el original los tenía
+            if ' ' in text or '-' in text:
+                result = self._restore_iban_formatting(result_no_spaces, text)
+            else:
+                result = result_no_spaces
+            
+            logger.debug(f"✅ IBAN no-spaces replacement: '{fake_no_spaces}' -> '{real_no_spaces}'")
+            return result
+        
+        # 4. ⛔ EVITAR reemplazos fragmentados parciales que causan problemas
+        # Solo hacer reemplazos de fragmentos si estamos seguros de que es correcto
+        
+        return text
+
+    def _normalize_iban_format(self, iban: str) -> str:
+        """🆕 NUEVA: Normalizar formato IBAN (grupos de 4 dígitos)"""
+        clean = iban.replace(' ', '').replace('-', '')
+        # ES91 2100 0418 4502 0005 1332
+        if len(clean) >= 8:
+            return f"{clean[:4]} {clean[4:8]} {clean[8:12]} {clean[12:16]} {clean[16:20]} {clean[20:]}".strip()
+        return iban
+    
+    def _restore_iban_formatting(self, iban_no_spaces: str, original_text: str) -> str:
+        """🆕 NUEVA: Restaurar formato de espacios basándose en el texto original"""
+        # Si el texto original tenía espacios cada 4 caracteres, mantener ese formato
+        if ' ' in original_text:
+            # Agregar espacios cada 4 caracteres
+            formatted = ''
+            for i, char in enumerate(iban_no_spaces):
+                if i > 0 and i % 4 == 0:
+                    formatted += ' '
+                formatted += char
+            return formatted
+        return iban_no_spaces
         
     def process_chunk(self, chunk: str) -> Tuple[str, str]:
         """
@@ -183,8 +296,16 @@ class ChunkDeanonymizer:
                 if self._is_complete_email(result, fake_email):
                     result = result.replace(fake_email, real_email)
                     logger.debug(f"✅ Email replacement: '{fake_email}' -> '{real_email}'")
+
+        # 🆕 PASO 3: IBANs (antes de entidades complejas)
+        sorted_ibans = sorted(self.iban_entities.items(), key=lambda x: len(x[0]), reverse=True)
+        for fake_iban, real_iban in sorted_ibans:
+            original_result = result
+            result = self._smart_iban_replacement(result, fake_iban, real_iban)
+            if result != original_result:  # Si hubo cambio
+                logger.debug(f"✅ IBAN replacement: '{fake_iban}' -> '{real_iban}'")
         
-        # PASO 3: Reemplazar entidades COMPLEJAS (nombres largos)
+        # PASO 4: Reemplazar entidades COMPLEJAS (nombres largos)
         # Ordenar por longitud descendente para evitar reemplazos parciales
         sorted_complex = sorted(self.complex_entities.items(), key=lambda x: len(x[0]), reverse=True)
         for fake, real in sorted_complex:
@@ -193,7 +314,7 @@ class ChunkDeanonymizer:
                     result = result.replace(fake, real)
                     logger.debug(f"✅ Complex replacement: '{fake}' -> '{real}'")
         
-        # PASO 4: Reemplazar entidades SIMPLES al final
+        # PASO 5: Reemplazar entidades SIMPLES al final
         # ⭐ FILTRAR entidades simples que podrían ser fragmentos de teléfonos
         filtered_simple = self._filter_phone_fragments(self.simple_entities, text)
         sorted_simple = sorted(filtered_simple.items(), key=lambda x: len(x[0]), reverse=True)
@@ -513,8 +634,8 @@ class ChunkDeanonymizer:
         - text="Hola mundo", target_word="León Sancho-Miranda" → False
         """
         
-        # Extraer palabras del final del texto (hasta 4 palabras)
-        words_in_text = text.split()[-4:]  # Últimas 4 palabras
+        # Extraer palabras del final del texto (hasta 6 palabras para IBANs largos)
+        words_in_text = text.split()[-6:]  # Últimas 6 palabras
         
         if not words_in_text:
             return False
@@ -523,14 +644,30 @@ class ChunkDeanonymizer:
         for i in range(len(words_in_text)):
             partial_text = ' '.join(words_in_text[i:])
             
+            # 🆕 MEJORADO: Para IBANs, también verificar sin espacios finales
+            partial_text_clean = partial_text.rstrip()
+            target_word_clean = target_word.strip()
+            
             # Verificar si esta parte del texto es un prefijo de target_word
-            if target_word.startswith(partial_text):
+            if (target_word.startswith(partial_text) or 
+                target_word.startswith(partial_text_clean) or
+                target_word_clean.startswith(partial_text_clean)):
+                
                 # Asegurarse de que no es la palabra completa (eso no es fragmentación)
-                if partial_text != target_word:
-                    # Añadir verificación adicional para reducir falsos positivos
-                    # Solo considerar fragmentación si el prefijo es sustancial
-                    if len(partial_text) >= 2:  # Al menos 2 caracteres
-                        logger.debug(f"✅ Fragment match: '{partial_text}' is prefix of '{target_word}'")
+                if (partial_text != target_word and 
+                    partial_text_clean != target_word_clean):
+                    
+                    # 🆕 MEJORADO: Lógica especial para IBANs (espacios cada 4 caracteres)
+                    if '@' not in target_word and len(partial_text_clean) >= 4:
+                        # Podría ser un IBAN o entidad con espacios
+                        # Verificar si termina en un punto de fragmentación típico
+                        if (len(partial_text_clean.replace(' ', '')) % 4 == 0 or  # Múltiplo de 4 (IBAN)
+                            partial_text_clean.endswith(' ') or                     # Termina en espacio
+                            len(partial_text_clean) >= 8):                          # Suficientemente largo
+                            return True
+                    
+                    # Lógica original para nombres y otras entidades
+                    if len(partial_text_clean) >= 3:  # Mínimo 3 caracteres para considerar fragmentación
                         return True
         
         return False
