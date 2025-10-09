@@ -12,6 +12,7 @@ import os
 import re
 import hmac
 import hashlib
+import time
 from typing import List, Dict, Tuple
 from datetime import datetime
 
@@ -34,6 +35,18 @@ try:
     SYNTHETIC_GENERATOR_AVAILABLE = True
 except Exception:
     SYNTHETIC_GENERATOR_AVAILABLE = False
+
+# Import metrics collection
+try:
+    from api.routes.metrics import (
+        record_pii_detection, 
+        record_pii_detection_error, 
+        record_document_processing,
+        record_document_processing_error
+    )
+    METRICS_AVAILABLE = True
+except Exception:
+    METRICS_AVAILABLE = False
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
@@ -644,6 +657,8 @@ def apply_replacements_from_matches(original_text: str, matches: List[Dict], use
 
 
 def run_pipeline(model: str, text: str, use_regex: bool = False, pseudonymize: bool = False, save_mapping: bool = True, use_realistic_fake: bool = False):
+    start_time = time.time()
+    
     model_map = {
         'es': 'mrm8488/bert-spanish-cased-finetuned-ner',
         'en': 'dslim/bert-base-NER',
@@ -661,66 +676,104 @@ def run_pipeline(model: str, text: str, use_regex: bool = False, pseudonymize: b
     backend = f"hf:{hf_model}"
     merged_mapping: Dict[str, str] = {}
 
-    if regex_first:
-        text_for_hf = text
-        regex_matches = collect_regex_matches(text) if use_regex else []
-        if HF_AVAILABLE:
-            try:
-                hf_matches = collect_hf_matches(text_for_hf, hf_model)
-            except Exception:
-                hf_matches = []
-        else:
-            hf_matches = []
-        chosen = resolve_matches(hf_matches, regex_matches)
-        pseudo_key = os.environ.get('PSEUDO_KEY') if pseudonymize else None
-        anonymized, new_map = apply_replacements_from_matches(text, chosen, use_pseudo=pseudonymize, pseudo_key=pseudo_key, use_realistic_fake=use_realistic_fake)
-        merged_mapping.update(new_map)
-
-    else:
-        if HF_AVAILABLE:
-            try:
-                hf_matches = collect_hf_matches(text, hf_model)
-            except Exception:
-                hf_matches = []
-        else:
-            hf_matches = []
-
-        regex_matches = collect_regex_matches(text) if use_regex else []
-        chosen = resolve_matches(hf_matches, regex_matches)
-        pseudo_key = os.environ.get('PSEUDO_KEY') if pseudonymize else None
-        anonymized, new_map = apply_replacements_from_matches(text, chosen, use_pseudo=pseudonymize, pseudo_key=pseudo_key, use_realistic_fake=use_realistic_fake)
-        merged_mapping.update(new_map)
-        if use_regex:
-            backend += "+regex"
-            if pseudonymize:
-                backend += "+pseudo"
-
     try:
-        print_report(anonymized, merged_mapping, text)
-    except Exception:
-        pass
+        if regex_first:
+            text_for_hf = text
+            regex_matches = collect_regex_matches(text) if use_regex else []
+            if HF_AVAILABLE:
+                try:
+                    hf_matches = collect_hf_matches(text_for_hf, hf_model)
+                except Exception as e:
+                    if METRICS_AVAILABLE:
+                        record_pii_detection_error("hf_processing_error")
+                    hf_matches = []
+            else:
+                hf_matches = []
+            chosen = resolve_matches(hf_matches, regex_matches)
+            pseudo_key = os.environ.get('PSEUDO_KEY') if pseudonymize else None
+            anonymized, new_map = apply_replacements_from_matches(text, chosen, use_pseudo=pseudonymize, pseudo_key=pseudo_key, use_realistic_fake=use_realistic_fake)
+            merged_mapping.update(new_map)
 
-    out = {"anonymized": anonymized, "mapping": merged_mapping, "backend": backend}
+        else:
+            if HF_AVAILABLE:
+                try:
+                    hf_matches = collect_hf_matches(text, hf_model)
+                except Exception as e:
+                    if METRICS_AVAILABLE:
+                        record_pii_detection_error("hf_processing_error")
+                    hf_matches = []
+            else:
+                hf_matches = []
 
-    if save_mapping:
+            regex_matches = collect_regex_matches(text) if use_regex else []
+            chosen = resolve_matches(hf_matches, regex_matches)
+            pseudo_key = os.environ.get('PSEUDO_KEY') if pseudonymize else None
+            anonymized, new_map = apply_replacements_from_matches(text, chosen, use_pseudo=pseudonymize, pseudo_key=pseudo_key, use_realistic_fake=use_realistic_fake)
+            merged_mapping.update(new_map)
+            if use_regex:
+                backend += "+regex"
+                if pseudonymize:
+                    backend += "+pseudo"
+
+        # Record metrics for each detected PII type
+        if METRICS_AVAILABLE:
+            duration = time.time() - start_time
+            
+            # Count detections by type
+            pii_counts = {}
+            for token in merged_mapping.keys():
+                if token.startswith('[') and ']' in token:
+                    pii_type = token.split('_')[0].strip('[]')
+                elif '_' in token:
+                    pii_type = token.split('_')[0].upper()
+                else:
+                    pii_type = 'MISC'
+                
+                pii_counts[pii_type] = pii_counts.get(pii_type, 0) + 1
+            
+            # Record metrics for each type
+            for pii_type, count in pii_counts.items():
+                for _ in range(count):
+                    record_pii_detection(pii_type, duration / len(merged_mapping) if merged_mapping else duration)
+            
+            # Record document processing if we found any PII
+            if merged_mapping:
+                record_document_processing("pii_document")
+
         try:
-            valid_map, suspects = validate_mapping(merged_mapping)
-            out_valid = {"anonymized": anonymized, "mapping": valid_map, "backend": backend}
-            map_dir = os.path.join(HERE, '..', 'map')
-            os.makedirs(map_dir, exist_ok=True)
-            mpath = os.path.join(map_dir, 'anonymized_map.json')
-            with open(mpath, 'w', encoding='utf-8') as mf:
-                json.dump(out_valid, mf, ensure_ascii=False, indent=2)
-            print(f"Valid mapping saved to {mpath}")
-            if suspects:
-                suspects_path = os.path.join(map_dir, 'anonymized_map_suspects.json')
-                with open(suspects_path, 'w', encoding='utf-8') as sf:
-                    json.dump({"suspects": suspects}, sf, ensure_ascii=False, indent=2)
-                print(f"Suspect mapping entries saved to {suspects_path} (manual review required)")
-        except Exception as exc:
-            print(f"Warning: failed to save mapping file: {exc}")
+            print_report(anonymized, merged_mapping, text)
+        except Exception:
+            pass
 
-    return out
+        out = {"anonymized": anonymized, "mapping": merged_mapping, "backend": backend}
+
+        if save_mapping:
+            try:
+                valid_map, suspects = validate_mapping(merged_mapping)
+                out_valid = {"anonymized": anonymized, "mapping": valid_map, "backend": backend}
+                map_dir = os.path.join(HERE, '..', 'map')
+                os.makedirs(map_dir, exist_ok=True)
+                mpath = os.path.join(map_dir, 'anonymized_map.json')
+                with open(mpath, 'w', encoding='utf-8') as mf:
+                    json.dump(out_valid, mf, ensure_ascii=False, indent=2)
+                print(f"Valid mapping saved to {mpath}")
+                if suspects:
+                    suspects_path = os.path.join(map_dir, 'anonymized_map_suspects.json')
+                    with open(suspects_path, 'w', encoding='utf-8') as sf:
+                        json.dump({"suspects": suspects}, sf, ensure_ascii=False, indent=2)
+                    print(f"Suspect mapping entries saved to {suspects_path} (manual review required)")
+            except Exception as exc:
+                if METRICS_AVAILABLE:
+                    record_document_processing_error("mapping_save_error")
+                print(f"Warning: failed to save mapping file: {exc}")
+
+        return out
+        
+    except Exception as e:
+        if METRICS_AVAILABLE:
+            record_pii_detection_error("pipeline_error")
+            record_document_processing_error("pipeline_failure")
+        raise e
 
 
 def cli(argv: List[str]):
