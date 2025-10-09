@@ -92,7 +92,9 @@ def _regex_patterns() -> Dict[str, str]:
         'IBAN': r"\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]{4}){3,7}\s?[A-Z0-9]{1,4}\b",
         'EMAIL': r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
         'PHONE': r"\+?\d[\d\s\-()]{6,}\d",
-        'DNI': r"\b\d{8}[A-Z]\b",
+        'DNI': r"\b(?:\d{8}[A-Z]|[XYZ]\d{7}[A-Z])\b",  # DNIs y NIEs españoles
+        'PASSPORT': r"\b(?:[A-Z]{3}\d{6}|[A-Z]\d{8}|\d{2}[A-Z]{2}\d{5})\b",  # Pasaportes españoles e internacionales
+        'NSS': r"\b\d{2}\s?\d{4}\s?\d{4}\s?\d{1,2}\b",  # Número de Seguridad Social español (11-12 dígitos)
     }
 
 
@@ -183,16 +185,83 @@ def _is_valid_iban(val: str) -> bool:
     return remainder == 1
 
 
-def _is_valid_dni(val: str) -> bool:
-    """Valida DNI español usando algoritmo de letra de control"""
-    if not re.match(r"^\d{8}[A-Z]$", val):
+def _is_valid_nss(val: str) -> bool:
+    """Valida formato de Número de Seguridad Social español"""
+    # Eliminar espacios y guiones
+    clean = re.sub(r'[\s\-]', '', val)
+    
+    # Debe tener 11 o 12 dígitos (según formato español)
+    if not re.match(r'^\d{11,12}$', clean):
         return False
     
-    # Tabla de letras de control para DNIs españoles
-    letters = "TRWAGMYFPDXBNJZSQVHLCKE"
-    number = int(val[:8])
-    expected_letter = letters[number % 23]
-    return val[8] == expected_letter
+    # Validaciones básicas del NSS español:
+    # - Los primeros 2 dígitos: código de provincia (01-99)
+    # - No puede empezar por 00
+    provincia = clean[:2]
+    if provincia == '00' or int(provincia) > 99:
+        return False
+    
+    # Validación adicional: no puede ser todo ceros o todo iguales
+    if clean == '0' * len(clean) or len(set(clean)) == 1:
+        return False
+    
+    return True
+
+
+def _is_valid_passport(val: str) -> bool:
+    """Valida formatos de pasaporte españoles e internacionales"""
+    val = val.strip()
+    
+    # Solo aceptar mayúsculas
+    if not val.isupper():
+        return False
+    
+    # Pasaporte español: 3 letras + 6 dígitos (ABC123456)
+    if re.match(r"^[A-Z]{3}\d{6}$", val):
+        return True
+    
+    # Pasaporte con 1 letra + 8 dígitos (A12345678)
+    if re.match(r"^[A-Z]\d{8}$", val):
+        return True
+    
+    # Pasaporte formato mixto: 2 dígitos + 2 letras + 5 dígitos (12AB34567)
+    if re.match(r"^\d{2}[A-Z]{2}\d{5}$", val):
+        return True
+    
+    return False
+
+
+def _is_valid_dni(val: str) -> bool:
+    """Valida DNI y NIE españoles usando algoritmo de letra de control"""
+    val = val.upper().strip()
+    
+    # Validar formato DNI (8 dígitos + letra)
+    if re.match(r"^\d{8}[A-Z]$", val):
+        letters = "TRWAGMYFPDXBNJZSQVHLCKE"
+        number = int(val[:8])
+        expected_letter = letters[number % 23]
+        return val[8] == expected_letter
+    
+    # Validar formato NIE ([XYZ] + 7 dígitos + letra)
+    elif re.match(r"^[XYZ]\d{7}[A-Z]$", val):
+        letters = "TRWAGMYFPDXBNJZSQVHLCKE"
+        
+        # Convertir primera letra a número según algoritmo NIE
+        first_char = val[0]
+        if first_char == 'X':
+            number_str = '0' + val[1:8]
+        elif first_char == 'Y':
+            number_str = '1' + val[1:8]
+        elif first_char == 'Z':
+            number_str = '2' + val[1:8]
+        else:
+            return False
+            
+        number = int(number_str)
+        expected_letter = letters[number % 23]
+        return val[8] == expected_letter
+    
+    return False
 
 
 def validate_mapping(mapping: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str, str]]:
@@ -233,6 +302,16 @@ def validate_mapping(mapping: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str,
                     suspects[tok] = orig
             elif lower.startswith('dni_') or lower.startswith('[dni') or lower.startswith('dni'):
                 if _is_valid_dni(orig):
+                    valid[tok] = orig
+                else:
+                    suspects[tok] = orig
+            elif lower.startswith('passport_') or lower.startswith('[passport') or lower.startswith('passport'):
+                if _is_valid_passport(orig):
+                    valid[tok] = orig
+                else:
+                    suspects[tok] = orig
+            elif lower.startswith('nss_') or lower.startswith('[nss') or lower.startswith('nss'):
+                if _is_valid_nss(orig):
                     valid[tok] = orig
                 else:
                     suspects[tok] = orig
@@ -409,7 +488,7 @@ def collect_regex_matches(text: str):
 
 
 def resolve_matches(hf_matches, regex_matches):
-    REGEX_ALWAYS = {'EMAIL', 'PHONE', 'CARD', 'IBAN', 'DNI', 'IP', 'BIOMETRIC', 'CREDENTIALS', 'COMBO'}
+    REGEX_ALWAYS = {'EMAIL', 'PHONE', 'CARD', 'IBAN', 'DNI', 'PASSPORT', 'NSS', 'IP', 'BIOMETRIC', 'CREDENTIALS', 'COMBO'}
     SYNERGY = {'ID', 'DOB'}
 
     filtered_hf = []
@@ -425,6 +504,24 @@ def resolve_matches(hf_matches, regex_matches):
         if len(orig.strip()) < 2 or orig.strip() in ['+', '-', '_', '.', ',', ';', ':', '!', '?']:
             continue
         filtered_regex.append(r)
+
+    # Resolver conflictos NSS vs PHONE: NSS tiene prioridad
+    nss_matches = [r for r in filtered_regex if r['label'] == 'NSS']
+    phone_matches = [r for r in filtered_regex if r['label'] == 'PHONE']
+    other_matches = [r for r in filtered_regex if r['label'] not in ['NSS', 'PHONE']]
+    
+    # Filtrar PHONE que se solapen con NSS
+    def overlaps_text(a, b):
+        return not (a['end'] <= b['start'] or a['start'] >= b['end'])
+    
+    filtered_phone = []
+    for phone in phone_matches:
+        is_overlapped_by_nss = any(overlaps_text(phone, nss) for nss in nss_matches)
+        if not is_overlapped_by_nss:
+            filtered_phone.append(phone)
+    
+    # Reconstruir la lista filtrada
+    filtered_regex = other_matches + nss_matches + filtered_phone
 
     hf_intervals = []
     for h in filtered_hf:
@@ -466,6 +563,11 @@ def resolve_matches(hf_matches, regex_matches):
         if any(overlaps(r, k) for k in kept_regex):
             continue
         h = overlaps_with_hf(r)
+        # Si está en REGEX_ALWAYS, siempre mantenerlo independientemente del overlap
+        if r['label'] in REGEX_ALWAYS:
+            kept_regex.append(r)
+            continue
+        # Solo eliminar si hace overlap con HF y no está en casos especiales
         if h is not None and not (r['label'] in SYNERGY and h.get('label') == 'MISC'):
             continue
         kept_regex.append(r)
