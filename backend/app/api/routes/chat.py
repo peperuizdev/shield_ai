@@ -70,7 +70,7 @@ async def chat_stream_propuesta(request: ChatRequest):
         # PASO 1: OBTENER MAPA EXISTENTE
         if request.save_mapping and session_id:
             try:
-                from services.session_manager import get_anonymization_map
+                from services.session.anonymization import get_anonymization_map
                 existing_mapping = get_anonymization_map(session_id)
                 logger.info(f"MAPA EXISTENTE ENCONTRADO para sesión {session_id}: {len(existing_mapping)} entidades")
             except Exception:
@@ -102,7 +102,8 @@ async def chat_stream_propuesta(request: ChatRequest):
         # PASO 3: GUARDAR MAPA EN REDIS
         if mapping and request.save_mapping:
             try:
-                from services.session_manager import store_anonymization_map, store_anonymized_request
+                from services.session.anonymization import store_anonymization_map
+                from services.session.llm_data import store_anonymized_request
                 store_anonymization_map(session_id, mapping)
                 store_anonymized_request(session_id, anonymized_text)
                 logger.info(f"✅ Texto anonimizado guardado en Redis para sesión {session_id}")
@@ -141,7 +142,7 @@ async def chat_stream_propuesta(request: ChatRequest):
 @router.post("/test-anonymization-consistency")
 async def test_anonymization_consistency(request: ChatRequest):
     try:
-        from services.session_manager import get_anonymization_map, store_anonymization_map
+        from services.session.anonymization import get_anonymization_map, store_anonymization_map
         session_id = request.session_id or "test_consistency"
 
         try:

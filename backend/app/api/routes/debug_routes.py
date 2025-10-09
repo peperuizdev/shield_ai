@@ -13,7 +13,7 @@ async def debug_session_mapping(session_id: str):
     Debug: Ver el mapa de anonimización guardado en Redis para una sesión.
     """
     try:
-        from services.session_manager import get_anonymization_map
+        from services.session.anonymization import get_anonymization_map
         
         mapping = get_anonymization_map(session_id)
         
@@ -40,7 +40,8 @@ async def debug_session_all_data(session_id: str):
     Debug: Ver todos los datos guardados para una sesión.
     """
     try:
-        from services.session_manager import get_anonymization_map, get_anonymized_request, get_llm_response
+        from services.session.anonymization import get_anonymization_map
+        from services.session.llm_data import get_anonymized_request, get_llm_response
         
         mapping = None
         anonymized_request = None

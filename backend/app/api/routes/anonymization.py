@@ -11,25 +11,22 @@ class AnonymizeRequest(BaseModel):
     model: Optional[str] = 'es'
     use_regex: Optional[bool] = False
     pseudonymize: Optional[bool] = False
-    session_id: Optional[str] = None  # Guardar mapeo en Redis si se proporciona session_id
+    session_id: Optional[str] = None
 
 @router.post('/')
 def anonymize(req: AnonymizeRequest):
     try:
-        # Local import to avoid startup time for heavy deps
         from services.pii_detector import run_pipeline
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"PII service not available: {exc}")
 
     out = run_pipeline(req.model, req.text, use_regex=req.use_regex, pseudonymize=req.pseudonymize, save_mapping=False)
     
-    # Guardar mapeo en Redis si se proporciona session_id
     if req.session_id and out.get('mapping'):
         try:
-            from services.session_manager import store_anonymization_map
+            from services.session.anonymization import store_anonymization_map
             store_anonymization_map(req.session_id, out['mapping'])
         except Exception as e:
-            # No fallar si Redis falla, pero loggear el error
             print(f"Warning: Failed to store mapping in Redis: {e}")
     
     return out
@@ -40,21 +37,21 @@ async def get_anonymized_request(session_id: str):
     Obtiene el texto anonimizado que fue enviado al LLM para una sesión específica
     """
     print(f"🔥 ENDPOINT START: Getting anonymized request for session: {session_id}")
-    logger.info(f"� ENDPOINT START: Getting anonymized request for session: {session_id}")
+    logger.info(f"ENDPOINT START: Getting anonymized request for session: {session_id}")
     
     try:
-        from services.session_manager import get_anonymized_request, get_session_manager
+        from services.session.llm_data import get_anonymized_request as fetch_request
+        from services.session.manager import get_session_manager
         from core.redis_client import get_redis_client
         
         print(f"🔍 DEBUGGING session: {session_id}")
-        logger.info(f"� DEBUGGING session: {session_id}")
+        logger.info(f"DEBUGGING session: {session_id}")
         
-        # Obtener texto anonimizado directamente
         print(f"🔍 Calling get_anonymized_request...")
-        anonymized_text = get_anonymized_request(session_id)
+        anonymized_text = fetch_request(session_id)
         
-        print(f"� Result from get_anonymized_request: {anonymized_text is not None}")
-        logger.info(f"� Result from get_anonymized_request: {anonymized_text is not None}")
+        print(f"Result from get_anonymized_request: {anonymized_text is not None}")
+        logger.info(f"Result from get_anonymized_request: {anonymized_text is not None}")
         
         if anonymized_text:
             print(f"📄 Text length: {len(anonymized_text)}")
@@ -89,17 +86,15 @@ async def debug_redis_keys(session_id: str):
     Debug endpoint para inspeccionar directamente todas las claves de Redis para una sesión
     """
     try:
-        from services.session_manager import get_session_manager
+        from services.session.manager import get_session_manager
         from core.redis_client import get_redis_client
         
         redis_client = get_redis_client()
         manager = get_session_manager()
         
-        # Buscar todas las claves relacionadas con esta sesión
         all_keys = redis_client.keys("*")
         session_keys = [key for key in all_keys if session_id in str(key)]
         
-        # Claves específicas que deberían existir
         mapping_key = f"{manager.key_prefix}:{session_id}"
         llm_key = f"{manager.key_prefix}:llm:{session_id}"
         request_key = f"{manager.key_prefix}:request:{session_id}"
@@ -125,7 +120,6 @@ async def debug_redis_keys(session_id: str):
             }
         }
         
-        # Si existe la clave request, intentar obtener el valor
         if redis_client.exists(request_key):
             try:
                 raw_value = redis_client.get(request_key)

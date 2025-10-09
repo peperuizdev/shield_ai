@@ -21,7 +21,7 @@ from services.deanonymization_service import (
     test_full_process
 )
 
-from services.session_manager import store_anonymization_map
+from services.session.anonymization import store_anonymization_map
 
 router = APIRouter(prefix="/deanonymize", tags=["Deanonymization"])
 
