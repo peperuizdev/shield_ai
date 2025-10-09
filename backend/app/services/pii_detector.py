@@ -88,10 +88,11 @@ def anonymize_with_hf(text: str, hf_model: str):
 
 def _regex_patterns() -> Dict[str, str]:
     return {
-        'CARD': r"\b(?:\d[ -]*?){13,19}\b",
-        'IBAN': r"\b[A-Z]{2}\d{2}[A-Z0-9]{4,30}\b",
+        'CARD': r"\b(?:\d[ -]*?){15,19}\b",  # Mínimo 15 dígitos para evitar conflicto con DNIs
+        'IBAN': r"\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]{4}){3,7}\s?[A-Z0-9]{1,4}\b",
         'EMAIL': r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
         'PHONE': r"\+?\d[\d\s\-()]{6,}\d",
+        'DNI': r"\b\d{8}[A-Z]\b",
     }
 
 
@@ -182,6 +183,18 @@ def _is_valid_iban(val: str) -> bool:
     return remainder == 1
 
 
+def _is_valid_dni(val: str) -> bool:
+    """Valida DNI español usando algoritmo de letra de control"""
+    if not re.match(r"^\d{8}[A-Z]$", val):
+        return False
+    
+    # Tabla de letras de control para DNIs españoles
+    letters = "TRWAGMYFPDXBNJZSQVHLCKE"
+    number = int(val[:8])
+    expected_letter = letters[number % 23]
+    return val[8] == expected_letter
+
+
 def validate_mapping(mapping: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str, str]]:
     valid = {}
     suspects = {}
@@ -215,6 +228,11 @@ def validate_mapping(mapping: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str,
                     suspects[tok] = orig
             elif lower.startswith('iban_') or lower.startswith('[iban') or lower.startswith('iban'):
                 if _is_valid_iban(orig):
+                    valid[tok] = orig
+                else:
+                    suspects[tok] = orig
+            elif lower.startswith('dni_') or lower.startswith('[dni') or lower.startswith('dni'):
+                if _is_valid_dni(orig):
                     valid[tok] = orig
                 else:
                     suspects[tok] = orig
@@ -391,7 +409,7 @@ def collect_regex_matches(text: str):
 
 
 def resolve_matches(hf_matches, regex_matches):
-    REGEX_ALWAYS = {'EMAIL', 'PHONE', 'CARD', 'IBAN', 'IP', 'BIOMETRIC', 'CREDENTIALS', 'COMBO'}
+    REGEX_ALWAYS = {'EMAIL', 'PHONE', 'CARD', 'IBAN', 'DNI', 'IP', 'BIOMETRIC', 'CREDENTIALS', 'COMBO'}
     SYNERGY = {'ID', 'DOB'}
 
     filtered_hf = []
