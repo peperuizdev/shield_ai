@@ -26,14 +26,12 @@ class DocumentProcessorFactory:
     instance for PDF, Word, or Excel files.
     """
     
-    # Mapping of file types to processor classes
     _PROCESSORS = {
         'pdf': PDFProcessor,
         'word': WordProcessor,
         'excel': ExcelProcessor
     }
     
-    # File extension mappings
     _EXTENSION_MAP = {
         '.pdf': 'pdf',
         '.PDF': 'pdf',
@@ -43,7 +41,6 @@ class DocumentProcessorFactory:
         '.XLSX': 'excel'
     }
     
-    # MIME type mappings
     _MIME_TYPE_MAP = {
         'application/pdf': 'pdf',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'word',
@@ -67,21 +64,18 @@ class DocumentProcessorFactory:
         """
         detected_type = None
         
-        # First try MIME type detection (more reliable)
         if content_type and content_type in cls._MIME_TYPE_MAP:
             detected_type = cls._MIME_TYPE_MAP[content_type]
             logger.debug(f"File type detected from MIME type {content_type}: {detected_type}")
         
-        # Fallback to file extension
         if not detected_type:
             file_ext = os.path.splitext(filename)[1].lower()
             if file_ext in cls._EXTENSION_MAP:
                 detected_type = cls._EXTENSION_MAP[file_ext]
                 logger.debug(f"File type detected from extension {file_ext}: {detected_type}")
         
-        # Handle case-insensitive extension check
         if not detected_type:
-            file_ext = os.path.splitext(filename)[1]  # Keep original case
+            file_ext = os.path.splitext(filename)[1]
             if file_ext in cls._EXTENSION_MAP:
                 detected_type = cls._EXTENSION_MAP[file_ext]
                 logger.debug(f"File type detected from extension {file_ext}: {detected_type}")
@@ -145,7 +139,6 @@ class DocumentProcessorFactory:
         
         for file_type, processor_class in cls._PROCESSORS.items():
             try:
-                # Create temporary instance to get supported formats
                 processor = processor_class()
                 
                 supported_types[file_type] = {
@@ -175,7 +168,7 @@ def process_document(
     
     This is the main public function for document processing. It automatically
     detects the file type, creates the appropriate processor, and extracts
-    the text content.
+    the text content without anonymization.
     
     Args:
         file_content (bytes): Raw file content
@@ -192,17 +185,13 @@ def process_document(
     try:
         logger.info(f"Starting document processing for file: {filename}")
         
-        # Detect file type
         file_type = DocumentProcessorFactory.detect_file_type(filename, content_type)
         logger.info(f"Detected file type: {file_type}")
         
-        # Create appropriate processor
         processor = DocumentProcessorFactory.get_processor(file_type)
         
-        # Process the document using the base class pipeline
         result = processor.process_document(file_content, filename)
         
-        # Add factory metadata
         result['processing_info'] = {
             'detected_type': file_type,
             'processor_used': processor.__class__.__name__,
@@ -214,7 +203,6 @@ def process_document(
         return result
         
     except (DocumentValidationError, DocumentProcessingError):
-        # Re-raise document-specific errors
         raise
     
     except Exception as e:

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shield AI - Test Productivo</title>
+    <title>Shield AI - Test con Documentos</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -88,7 +88,41 @@
             resize: vertical;
         }
 
-        .button-group { display: flex; gap: 15px; margin-top: 20px; }
+        .file-upload-area {
+            width: 100%;
+            padding: 20px;
+            border: 2px dashed #dee2e6;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .file-upload-area:hover {
+            border-color: #3498db;
+            background: #f8f9fa;
+        }
+
+        .file-upload-area.has-file {
+            border-color: #2ecc71;
+            background: #d4edda;
+        }
+
+        .file-info {
+            display: none;
+            margin-top: 10px;
+            padding: 10px;
+            background: #fff3cd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .file-info.show {
+            display: block;
+        }
+
+        .button-group { display: flex; gap: 15px; margin-top: 20px; flex-wrap: wrap; }
 
         .btn {
             padding: 12px 25px;
@@ -120,15 +154,18 @@
         }
 
         .btn-primary { background: linear-gradient(135deg, #3498db, #2980b9); color: white; }
+        .btn-success { background: linear-gradient(135deg, #2ecc71, #27ae60); color: white; }
         .btn-secondary { background: linear-gradient(135deg, #95a5a6, #7f8c8d); color: white; }
         .btn-danger { background: linear-gradient(135deg, #e74c3c, #c0392b); color: white; }
 
         .response-container {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 20px;
             padding: 30px;
             min-height: 500px;
+            max-height: 600px;
+            overflow: hidden;
         }
 
         .response-box {
@@ -137,6 +174,10 @@
             border-radius: 15px;
             padding: 25px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            overflow: hidden;
         }
 
         .response-header {
@@ -145,6 +186,7 @@
             margin-bottom: 20px;
             padding-bottom: 15px;
             border-bottom: 2px solid #f1f3f4;
+            flex-shrink: 0;
         }
 
         .response-icon {
@@ -165,6 +207,7 @@
 
         .response-content {
             min-height: 300px;
+            max-height: 500px;
             background: #f8f9fa;
             border-radius: 10px;
             padding: 20px;
@@ -173,7 +216,8 @@
             white-space: pre-wrap;
             word-wrap: break-word;
             overflow-y: auto;
-            max-height: 400px;
+            overflow-x: hidden;
+            flex-grow: 1;
         }
 
         .status-bar {
@@ -197,6 +241,7 @@
 
         .status-dot.active { background: #2ecc71; }
         .status-dot.error { background: #e74c3c; }
+        .status-dot.processing { background: #f39c12; }
 
         @keyframes pulse {
             0% { transform: scale(1); opacity: 1; }
@@ -214,28 +259,29 @@
             z-index: 1000;
             transform: translateX(400px);
             transition: transform 0.3s ease;
+            max-width: 400px;
         }
 
         .notification.show { transform: translateX(0); }
         .notification.success { background: linear-gradient(135deg, #2ecc71, #27ae60); }
         .notification.error { background: linear-gradient(135deg, #e74c3c, #c0392b); }
+        .notification.info { background: linear-gradient(135deg, #3498db, #2980b9); }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🛡️ Shield AI - Streaming Viewer</h1>
-            <p>Visualiza el streaming de deanonymización con carga automática del texto anonimizado</p>
+            <h1>🛡️ Shield AI - Test con Documentos</h1>
+            <p>Streaming dual con soporte para mensaje + archivo adjunto</p>
         </div>
 
         <div class="controls">
             <div class="endpoint-info">
                 <h4>🚀 Cómo Usar</h4>
-                <p><strong>Paso 1:</strong> Escribe tu mensaje con datos reales en el textarea</p>
-                <p><strong>Paso 2:</strong> Click en "Chat + Streaming Integrado"</p>
-                <p><strong>Resultado:</strong> Ve en tiempo real el streaming dual + el texto anonimizado aparece inmediatamente</p>
-                <p><strong>✨ Novedad:</strong> El texto anonimizado se carga automáticamente al INICIO del streaming (no al final)</p>
-                <p><strong>Swagger URL:</strong> <a href="http://localhost:8000/docs" target="_blank">http://localhost:8000/docs</a></p>
+                <p><strong>Opción 1 - Solo Mensaje:</strong> Escribe tu mensaje y usa "💬 Chat Normal"</p>
+                <p><strong>Opción 2 - Mensaje + Documento:</strong> Escribe mensaje, adjunta archivo (PDF/Word/Excel) y usa "📄 Chat con Documento"</p>
+                <p><strong>✨ Novedad:</strong> Ambos endpoints usan streaming dual con deanonymización en tiempo real</p>
+                <p><strong>Swagger:</strong> <a href="http://localhost:8000/docs" target="_blank">http://localhost:8000/docs</a></p>
             </div>
 
             <div class="input-group">
@@ -251,21 +297,49 @@
             <div class="input-group">
                 <label for="userMessage">Tu Mensaje:</label>
             </div>
-            <textarea id="userMessage" class="prompt-area" placeholder="Escribe tu mensaje con datos reales...">Hola, mi nombre es Juan García y vivo en Madrid. Mi email es juan.garcia@gmail.com y mi teléfono es +34 612 345 678. ¿Puedes decirme todos los datos que proporciones con mi consulta?</textarea>
+            <textarea id="userMessage" class="prompt-area" placeholder="Escribe tu mensaje con datos reales...">Hola, soy Javier Moreno López, del departamento legal de TechSolutions España S.L.
+
+            Mi correo es j.moreno@techsolutions.es
+            y mi número directo es +34 679 441 223.
+                
+            Necesito que analices los siguientes datos que contienen información personal de varios clientes, incluyendo nombres, direcciones y teléfonos y me los listes sin incluir título de cada uno.</textarea>
+
+            <div class="input-group">
+                <label>Archivo adjunto (opcional):</label>
+            </div>
+            <div class="file-upload-area" id="fileUploadArea" onclick="document.getElementById('fileInput').click()">
+                <input type="file" id="fileInput" accept=".pdf,.docx,.xlsx" style="display: none;" onchange="handleFileSelect(event)">
+                <div id="uploadPrompt">
+                    📎 Click para seleccionar archivo
+                    <br>
+                    <small>Formatos: PDF, Word (.docx), Excel (.xlsx)</small>
+                </div>
+                <div class="file-info" id="fileInfo"></div>
+            </div>
 
             <div class="button-group">
-                <button class="btn btn-primary" onclick="startIntegratedStreaming()" id="consultBtn">
-                    <span class="btn-text">🚀 Chat + Streaming Integrado</span>
+                <button class="btn btn-primary" onclick="startNormalChat()" id="normalChatBtn">
+                    <span class="btn-text">💬 Chat Normal</span>
                     <span class="btn-loading" style="display: none;">
                         <div class="spinner"></div>
                         <span>Procesando...</span>
                     </span>
                 </button>
-                <button class="btn btn-secondary" onclick="loadAnonymizedRequest()">
-                    📝 Recargar Texto Anonimizado
+                
+                <button class="btn btn-success" onclick="startChatWithDocument()" id="docChatBtn">
+                    <span class="btn-text">📄 Chat con Documento</span>
+                    <span class="btn-loading" style="display: none;">
+                        <div class="spinner"></div>
+                        <span>Procesando...</span>
+                    </span>
                 </button>
+                
+                <button class="btn btn-secondary" onclick="loadAnonymizedRequest()">
+                    📝 Ver Texto Anonimizado
+                </button>
+                
                 <button class="btn btn-danger" onclick="clearAll()">
-                    🧹 Limpiar
+                    🧹 Limpiar Todo
                 </button>
             </div>
         </div>
@@ -315,6 +389,7 @@
 
     <script>
         let currentSessionId = null;
+        let selectedFile = null;
 
         function generateSessionId() {
             const timestamp = new Date().getTime();
@@ -326,6 +401,30 @@
             document.getElementById('sessionId').value = generateSessionId();
         });
 
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                selectedFile = file;
+                const uploadArea = document.getElementById('fileUploadArea');
+                const uploadPrompt = document.getElementById('uploadPrompt');
+                const fileInfo = document.getElementById('fileInfo');
+                
+                uploadArea.classList.add('has-file');
+                uploadPrompt.style.display = 'none';
+                fileInfo.classList.add('show');
+                
+                const fileSize = (file.size / 1024).toFixed(2);
+                fileInfo.innerHTML = `
+                    <strong>✅ Archivo seleccionado:</strong><br>
+                    📄 ${file.name}<br>
+                    📊 Tamaño: ${fileSize} KB<br>
+                    🔄 Click de nuevo para cambiar
+                `;
+                
+                showNotification(`Archivo "${file.name}" seleccionado correctamente`, 'success');
+            }
+        }
+
         function showNotification(message, type = 'success') {
             const notification = document.getElementById('notification');
             notification.textContent = message;
@@ -334,30 +433,31 @@
             setTimeout(() => notification.classList.remove('show'), 3000);
         }
 
-        function updateStatus(text, active = false, error = false) {
+        function updateStatus(text, state = 'idle') {
             const statusDot = document.getElementById('statusDot');
             const statusText = document.getElementById('statusText');
             statusText.textContent = text;
             statusDot.className = 'status-dot';
-            if (error) statusDot.classList.add('error');
-            else if (active) statusDot.classList.add('active');
+            if (state === 'active') statusDot.classList.add('active');
+            else if (state === 'error') statusDot.classList.add('error');
+            else if (state === 'processing') statusDot.classList.add('processing');
         }
 
-        function showLoadingState() {
-            const consultBtn = document.getElementById('consultBtn');
-            consultBtn.querySelector('.btn-text').style.display = 'none';
-            consultBtn.querySelector('.btn-loading').style.display = 'flex';
-            consultBtn.disabled = true;
+        function showLoadingState(buttonId) {
+            const btn = document.getElementById(buttonId);
+            btn.querySelector('.btn-text').style.display = 'none';
+            btn.querySelector('.btn-loading').style.display = 'flex';
+            btn.disabled = true;
         }
 
-        function hideLoadingState() {
-            const consultBtn = document.getElementById('consultBtn');
-            consultBtn.querySelector('.btn-text').style.display = 'inline';
-            consultBtn.querySelector('.btn-loading').style.display = 'none';
-            consultBtn.disabled = false;
+        function hideLoadingState(buttonId) {
+            const btn = document.getElementById(buttonId);
+            btn.querySelector('.btn-text').style.display = 'inline';
+            btn.querySelector('.btn-loading').style.display = 'none';
+            btn.disabled = false;
         }
 
-        async function startIntegratedStreaming() {
+        async function startNormalChat() {
             const sessionId = document.getElementById('sessionId').value;
             const apiUrl = document.getElementById('apiUrl').value;
             const message = document.getElementById('userMessage').value;
@@ -368,8 +468,8 @@
             }
 
             currentSessionId = sessionId;
-            showLoadingState();
-            updateStatus('Iniciando chat integrado con streaming...', true);
+            showLoadingState('normalChatBtn');
+            updateStatus('Iniciando chat normal con streaming...', 'active');
 
             try {
                 const response = await fetch(`${apiUrl}/chat/streaming`, {
@@ -391,98 +491,153 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                
-                const anonymousElement = document.getElementById('sessionInfo');
-                const deanonymousElement = document.getElementById('streamResponse');
-                
-                anonymousElement.textContent = '';
-                deanonymousElement.textContent = '';
-                
-                let anonymousText = '';
-                let deanonymousText = '';
-                let isFirstChunk = true;
-                let anonymizedTextLoaded = false;
-
-                function readStream() {
-                    return reader.read().then(({ done, value }) => {
-                        if (done) {
-                            hideLoadingState();
-                            updateStatus('Streaming completado exitosamente ✨');
-                            showNotification('Chat + Streaming completado! 🎉');
-                            return;
-                        }
-
-                        if (isFirstChunk) {
-                            hideLoadingState();
-                            updateStatus('Recibiendo streaming dual...', true);
-                            isFirstChunk = false;
-                        }
-
-                        const chunk = decoder.decode(value, { stream: true });
-                        const lines = chunk.split('\n');
-
-                        for (const line of lines) {
-                            if (line.startsWith('data: ')) {
-                                try {
-                                    const data = JSON.parse(line.substring(6));
-                                    
-                                    if (data.type === 'metadata') {
-                                        document.getElementById('statsText').textContent = 
-                                            `PII detectado: ${data.pii_detected} | Entidades: ${data.entity_count}`;
-                                        
-                                        // CARGAR EL TEXTO ANONIMIZADO INMEDIATAMENTE cuando recibimos metadata
-                                        if (!anonymizedTextLoaded) {
-                                            anonymizedTextLoaded = true;
-                                            updateStatus('Cargando texto anonimizado...', true);
-                                            setTimeout(() => {
-                                                loadAnonymizedRequestAutomatic(sessionId, apiUrl);
-                                            }, 100); // Solo 100ms de delay para que sea casi inmediato
-                                        }
-                                            
-                                    } else if (data.type === 'anonymous') {
-                                        anonymousText += data.chunk;
-                                        anonymousElement.textContent = anonymousText;
-                                        anonymousElement.scrollTop = anonymousElement.scrollHeight;
-                                        
-                                    } else if (data.type === 'deanonymized') {
-                                        deanonymousText += data.chunk;
-                                        deanonymousElement.textContent = deanonymousText;
-                                        deanonymousElement.scrollTop = deanonymousElement.scrollHeight;
-                                        
-                                    } else if (data.type === 'complete') {
-                                        updateStatus('Streaming completado exitosamente ✨');
-                                        showNotification('Todo el flujo completado exitosamente! 🎉');
-                                        return;
-                                    } else if (data.type === 'error') {
-                                        throw new Error(data.error);
-                                    }
-                                    
-                                } catch (error) {
-                                    console.error('Error parsing SSE data:', error);
-                                }
-                            }
-                        }
-
-                        return readStream();
-                    });
-                }
-
-                readStream();
+                await processStream(response, sessionId, apiUrl);
                 
             } catch (error) {
-                hideLoadingState();
-                updateStatus('Error en streaming integrado', false, true);
+                hideLoadingState('normalChatBtn');
+                updateStatus('Error en streaming', 'error');
                 showNotification(`Error: ${error.message}`, 'error');
             }
+        }
+
+        async function startChatWithDocument() {
+            const sessionId = document.getElementById('sessionId').value;
+            const apiUrl = document.getElementById('apiUrl').value;
+            const message = document.getElementById('userMessage').value;
+            
+            if (!sessionId || !message.trim()) {
+                showNotification('Por favor, completa el mensaje', 'error');
+                return;
+            }
+
+            if (!selectedFile) {
+                showNotification('Por favor, selecciona un archivo', 'error');
+                return;
+            }
+
+            currentSessionId = sessionId;
+            showLoadingState('docChatBtn');
+            updateStatus('Procesando documento...', 'processing');
+
+            try {
+                const formData = new FormData();
+                formData.append('message', message);
+                formData.append('file', selectedFile);
+                formData.append('session_id', sessionId);
+                formData.append('use_realistic_fake', 'true');
+
+                showNotification('Extrayendo texto del documento...', 'info');
+
+                const response = await fetch(`${apiUrl}/chat/with-document`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+                }
+
+                updateStatus('Documento procesado, iniciando streaming...', 'active');
+                showNotification('Documento procesado correctamente, generando respuesta...', 'success');
+
+                await processStream(response, sessionId, apiUrl);
+                
+            } catch (error) {
+                hideLoadingState('docChatBtn');
+                updateStatus('Error procesando documento', 'error');
+                showNotification(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function processStream(response, sessionId, apiUrl) {
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            
+            const anonymousElement = document.getElementById('sessionInfo');
+            const deanonymousElement = document.getElementById('streamResponse');
+            
+            anonymousElement.textContent = '';
+            deanonymousElement.textContent = '';
+            
+            let anonymousText = '';
+            let deanonymousText = '';
+            let isFirstChunk = true;
+            let anonymizedTextLoaded = false;
+
+            function readStream() {
+                return reader.read().then(({ done, value }) => {
+                    if (done) {
+                        hideLoadingState('normalChatBtn');
+                        hideLoadingState('docChatBtn');
+                        updateStatus('Streaming completado exitosamente ✨', 'active');
+                        showNotification('Chat completado! 🎉', 'success');
+                        return;
+                    }
+
+                    if (isFirstChunk) {
+                        hideLoadingState('normalChatBtn');
+                        hideLoadingState('docChatBtn');
+                        updateStatus('Recibiendo streaming dual...', 'active');
+                        isFirstChunk = false;
+                    }
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                
+                                if (data.type === 'metadata') {
+                                    document.getElementById('statsText').textContent = 
+                                        `PII detectado: ${data.pii_detected} | Entidades: ${data.entity_count}`;
+                                    
+                                    if (!anonymizedTextLoaded) {
+                                        anonymizedTextLoaded = true;
+                                        updateStatus('Cargando texto anonimizado...', 'active');
+                                        setTimeout(() => {
+                                            loadAnonymizedRequestAutomatic(sessionId, apiUrl);
+                                        }, 100);
+                                    }
+                                        
+                                } else if (data.type === 'anonymous') {
+                                    anonymousText += data.chunk;
+                                    anonymousElement.textContent = anonymousText;
+                                    anonymousElement.scrollTop = anonymousElement.scrollHeight;
+                                    
+                                } else if (data.type === 'deanonymized') {
+                                    deanonymousText += data.chunk;
+                                    deanonymousElement.textContent = deanonymousText;
+                                    deanonymousElement.scrollTop = deanonymousElement.scrollHeight;
+                                    
+                                } else if (data.type === 'complete') {
+                                    updateStatus('Streaming completado exitosamente ✨', 'active');
+                                    showNotification('Todo el flujo completado! 🎉', 'success');
+                                    return;
+                                } else if (data.type === 'error') {
+                                    throw new Error(data.error);
+                                }
+                                
+                            } catch (error) {
+                                console.error('Error parsing SSE data:', error);
+                            }
+                        }
+                    }
+
+                    return readStream();
+                });
+            }
+
+            readStream();
         }
 
         async function loadAnonymizedRequestAutomatic(sessionId, apiUrl) {
             const anonymizedElement = document.getElementById('anonymizedRequest');
             
             anonymizedElement.innerHTML = `<div style="text-align: center; color: #6c757d; padding: 20px;">
-                <div style="margin-bottom: 10px;">⚡ Cargando texto anonimizado (inicio de streaming)...</div>
+                <div style="margin-bottom: 10px;">⚡ Cargando texto anonimizado...</div>
                 <small>Sesión: <strong>${sessionId}</strong></small>
             </div>`;
             
@@ -501,17 +656,14 @@
                 }
                 
                 const data = await response.json();
-                
-                // Usar el mismo formato simple que las otras cajas
                 anonymizedElement.textContent = data.anonymized_request;
-                
-                updateStatus('Recibiendo streaming dual...', true);
+                updateStatus('Recibiendo streaming dual...', 'active');
                 
             } catch (error) {
                 console.error('Auto-load error:', error);
                 anonymizedElement.innerHTML = `<div style="color: #ffc107; text-align: center; padding: 20px; background: #fff3cd; border-radius: 8px; border: 1px solid #ffc107;">
                     <strong>⚠️ Auto-carga falló:</strong> ${error.message}<br><br>
-                    <small>Puedes usar el botón "📝 Recargar Texto Anonimizado" manualmente</small>
+                    <small>Puedes usar el botón "📝 Ver Texto Anonimizado" manualmente</small>
                 </div>`;
             }
         }
@@ -551,35 +703,38 @@
                 }
                 
                 const data = await response.json();
-                
-                // Usar el mismo formato simple que las otras cajas
                 anonymizedElement.textContent = data.anonymized_request;
-                
                 showNotification('Texto anonimizado cargado correctamente', 'success');
                 
             } catch (error) {
                 console.error('Anonymized request error:', error);
                 anonymizedElement.innerHTML = `<div style="color: #e74c3c; text-align: center; padding: 20px;">
-                    <strong>Error:</strong> ${error.message}<br><br>
-                    <div style="background: #f8f9fa; padding: 10px; margin: 10px 0; border-radius: 5px; text-align: left; font-size: 12px;">
-                        <strong>Para ver el texto anonimizado:</strong><br>
-                        1. Ejecuta un chat con "🚀 Chat + Streaming Integrado"<br>
-                        2. Espera a que termine completamente<br>
-                        3. El texto se cargará automáticamente
-                    </div>
+                    <strong>Error:</strong> ${error.message}
                 </div>`;
                 showNotification(`Error: ${error.message}`, 'error');
             }
         }
 
         function clearAll() {
-            hideLoadingState();
+            hideLoadingState('normalChatBtn');
+            hideLoadingState('docChatBtn');
+            
             document.getElementById('sessionInfo').textContent = 'Esperando mensaje con datos falsos...';
             document.getElementById('streamResponse').textContent = 'Esperando datos reales...';
             document.getElementById('anonymizedRequest').textContent = 'Esperando texto anonimizado...';
             document.getElementById('statsText').textContent = 'Esperando datos...';
-            updateStatus('Todo limpiado');
+            
+            selectedFile = null;
+            document.getElementById('fileInput').value = '';
+            const uploadArea = document.getElementById('fileUploadArea');
+            uploadArea.classList.remove('has-file');
+            document.getElementById('uploadPrompt').style.display = 'block';
+            document.getElementById('fileInfo').classList.remove('show');
+            
+            updateStatus('Todo limpiado', 'idle');
             currentSessionId = null;
+            
+            showNotification('Todo limpiado correctamente', 'info');
         }
     </script>
 </body>

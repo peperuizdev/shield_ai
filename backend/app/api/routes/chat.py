@@ -4,17 +4,10 @@ Endpoint de chat que integra:
 2. MultiProviderLLMClient para Grok, OpenAI y Anthropic
 3. Sistema de desanonimización propio
 4. Sistema de datos sintéticos mejorado
-
-CAMBIOS REALIZADOS EN ESTE ARCHIVO:
-- Importar synthetic_data_generator para unificar generación de datos falsos
-- Modificar endpoint /streaming para retornar StreamingResponse real
-- Usar generate_real_time_dual_stream() para streaming SSE correcto
-- Guardar texto anonimizado en Redis para que test.html pueda cargarlo
-- FORZAR use_realistic_fake=True para siempre usar datos sintéticos realistas
-- ELIMINAR post-procesamiento redundante (PASO 2.2) ya que pii_detector lo hace
+5. Soporte para mensaje + documento adjunto
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, Dict
@@ -138,6 +131,105 @@ async def chat_stream_propuesta(request: ChatRequest):
     except Exception as e:
         logger.error(f"Error en chat streaming: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error en streaming: {str(e)}")
+
+
+@router.post("/with-document")
+async def chat_with_document(
+    message: str = Form(...),
+    file: UploadFile = File(...),
+    session_id: Optional[str] = Form(None),
+    model: Optional[str] = Form("es"),
+    use_regex: Optional[bool] = Form(True),
+    use_realistic_fake: Optional[bool] = Form(True)
+):
+    """
+    Endpoint que combina mensaje + documento adjunto.
+    Anonimiza TODO junto para mantener consistencia de entidades.
+    """
+    try:
+        from services.document_processing import process_document
+        from services.pii_detector import run_pipeline
+        from services.session.anonymization import store_anonymization_map
+        from services.session.llm_data import store_anonymized_request
+        from utils.helpers import generate_session_id
+        
+        logger.info(f"📄 Procesando chat con documento: {file.filename}")
+        
+        session_id = session_id or generate_session_id(prefix="chat_doc")
+        
+        file_content = await file.read()
+        
+        if len(file_content) == 0:
+            raise HTTPException(status_code=400, detail="Archivo vacío")
+        
+        logger.info(f"📂 Extrayendo texto de {file.filename}...")
+        doc_result = process_document(
+            file_content=file_content,
+            filename=file.filename,
+            content_type=file.content_type
+        )
+        doc_text = doc_result['text']
+        
+        logger.info(f"✅ Texto extraído: {len(doc_text)} caracteres")
+        
+        combined_text = f"""{message}
+
+DOCUMENTO_ADJUNTO:
+{doc_text}"""
+        
+        logger.info(f"🔄 Anonimizando texto combinado ({len(combined_text)} chars)...")
+        
+        anonymization_result = run_pipeline(
+            model=model,
+            text=combined_text,
+            use_regex=use_regex,
+            pseudonymize=False,
+            save_mapping=False,
+            use_realistic_fake=use_realistic_fake
+        )
+        
+        anonymized_combined = anonymization_result.get('anonymized', combined_text)
+        mapping = anonymization_result.get('mapping', {})
+        
+        logger.info(f"✅ Anonimización completada: {len(mapping)} entidades detectadas")
+        
+        if mapping:
+            store_anonymization_map(session_id, mapping)
+            store_anonymized_request(session_id, anonymized_combined)
+            logger.info(f"💾 Mapping guardado en Redis para sesión {session_id}")
+        
+        llm_prompt = f"""Actúa como un asistente útil. El usuario te ha enviado un mensaje y un documento.
+
+{anonymized_combined}
+
+Responde considerando AMBOS: el mensaje del usuario y el contenido del documento. Sé claro y completo."""
+        
+        logger.info(f"🚀 Iniciando streaming para sesión {session_id}")
+        
+        llm_client = LLMClientPropuesta()
+        
+        return StreamingResponse(
+            generate_real_time_dual_stream(
+                session_id=session_id,
+                llm_prompt=llm_prompt,
+                mapping=mapping,
+                llm_client=llm_client
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error en chat con documento: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
 
 @router.post("/test-anonymization-consistency")
 async def test_anonymization_consistency(request: ChatRequest):
