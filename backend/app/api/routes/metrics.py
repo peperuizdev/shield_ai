@@ -85,6 +85,33 @@ active_sessions_total = Gauge(
     'Total number of active sessions'
 )
 
+# Redis mapping metrics
+redis_mapping_sessions_total = Gauge(
+    'redis_mapping_sessions_total',
+    'Total number of sessions with mappings in Redis'
+)
+
+redis_mapping_entries_total = Gauge(
+    'redis_mapping_entries_total',
+    'Total number of mapping entries across all sessions in Redis'
+)
+
+redis_mapping_entries_per_session = Gauge(
+    'redis_mapping_entries_per_session',
+    'Average number of mapping entries per session',
+    ['session_id']
+)
+
+redis_memory_usage_bytes = Gauge(
+    'redis_memory_usage_bytes',
+    'Redis memory usage in bytes'
+)
+
+redis_connection_status = Gauge(
+    'redis_connection_status',
+    'Redis connection status (1 = connected, 0 = disconnected)'
+)
+
 # Document processing metrics
 document_processing_total = Counter(
     'document_processing_total',
@@ -148,6 +175,81 @@ def update_active_sessions(count: int):
     """Update active sessions count"""
     active_sessions_total.set(count)
 
+def update_redis_mapping_metrics():
+    """Update Redis mapping-related metrics"""
+    try:
+        from core.redis_client import get_redis_client, get_redis_health
+        import redis
+        import json
+        
+        # Get Redis health and connection status
+        redis_health = get_redis_health()
+        redis_connection_status.set(1 if redis_health["status"] == "healthy" else 0)
+        
+        # If Redis is not healthy, set metrics to 0 and return
+        if redis_health["status"] != "healthy":
+            redis_mapping_sessions_total.set(0)
+            redis_mapping_entries_total.set(0)
+            redis_memory_usage_bytes.set(0)
+            return
+        
+        # Get Redis client
+        redis_client = get_redis_client()
+        
+        # Get Redis memory usage
+        redis_info = redis_client.info('memory')
+        redis_memory_usage_bytes.set(redis_info.get('used_memory', 0))
+        
+        # Find all session mapping keys
+        session_keys = redis_client.keys("anon_map:session_*")
+        session_keys = [k for k in session_keys if not k.endswith(('_request', '_meta', '_llm'))]
+        
+        redis_mapping_sessions_total.set(len(session_keys))
+        
+        # Count total mapping entries across all sessions
+        total_mappings = 0
+        session_mapping_counts = {}
+        
+        for session_key in session_keys:
+            try:
+                mapping_json = redis_client.get(session_key)
+                if mapping_json:
+                    mapping = json.loads(mapping_json)
+                    mapping_count = len(mapping)
+                    total_mappings += mapping_count
+                    
+                    # Extract session ID from key
+                    session_id = session_key.replace("anon_map:session_", "")
+                    session_mapping_counts[session_id] = mapping_count
+                    
+                    # Set per-session metric
+                    redis_mapping_entries_per_session.labels(session_id=session_id).set(mapping_count)
+            except (json.JSONDecodeError, redis.RedisError) as e:
+                print(f"Error processing session {session_key}: {e}")
+                continue
+        
+        redis_mapping_entries_total.set(total_mappings)
+        
+    except Exception as e:
+        print(f"Error updating Redis mapping metrics: {e}")
+        # Set error state
+        redis_connection_status.set(0)
+        redis_mapping_sessions_total.set(0)
+        redis_mapping_entries_total.set(0)
+        redis_memory_usage_bytes.set(0)
+
+def record_mapping_session_created(session_id: str, mapping_count: int):
+    """Record when a new mapping session is created"""
+    redis_mapping_entries_per_session.labels(session_id=session_id).set(mapping_count)
+
+def record_mapping_session_deleted(session_id: str):
+    """Record when a mapping session is deleted"""
+    # Remove the metric for this session
+    try:
+        redis_mapping_entries_per_session.remove(session_id)
+    except Exception:
+        pass  # Metric might not exist
+
 # === METRICS ENDPOINTS ===
 
 @router.get("/")
@@ -158,6 +260,9 @@ async def get_metrics():
     """
     # Update system metrics before returning
     update_system_metrics()
+    
+    # Update Redis mapping metrics
+    update_redis_mapping_metrics()
     
     # Generate metrics in Prometheus format
     return Response(
@@ -212,6 +317,9 @@ async def get_metrics_summary():
         # Update system metrics
         update_system_metrics()
         
+        # Update Redis metrics
+        update_redis_mapping_metrics()
+        
         summary = {
             "timestamp": time.time(),
             "http_requests": {
@@ -232,6 +340,13 @@ async def get_metrics_summary():
                 "memory_usage_bytes": system_memory_usage_bytes._value.get(),
                 "cpu_usage_percent": system_cpu_usage_percent._value.get(),
                 "active_sessions": active_sessions_total._value.get()
+            },
+            "redis": {
+                "connection_status": redis_connection_status._value.get(),
+                "memory_usage_bytes": redis_memory_usage_bytes._value.get(),
+                "mapping_sessions_total": redis_mapping_sessions_total._value.get(),
+                "mapping_entries_total": redis_mapping_entries_total._value.get(),
+                "avg_mappings_per_session": redis_mapping_entries_total._value.get() / max(redis_mapping_sessions_total._value.get(), 1)
             }
         }
         
@@ -240,5 +355,102 @@ async def get_metrics_summary():
     except Exception as e:
         return JSONResponse(
             content={"error": str(e)},
+            status_code=500
+        )
+
+@router.get("/redis")
+async def get_redis_metrics():
+    """
+    Get detailed Redis mapping metrics
+    """
+    try:
+        # Update Redis metrics
+        update_redis_mapping_metrics()
+        
+        from core.redis_client import get_redis_client, get_redis_health
+        import json
+        
+        redis_health = get_redis_health()
+        
+        if redis_health["status"] != "healthy":
+            return JSONResponse(
+                content={
+                    "status": "unhealthy",
+                    "error": redis_health.get("error", "Redis connection failed"),
+                    "timestamp": time.time()
+                },
+                status_code=503
+            )
+        
+        redis_client = get_redis_client()
+        
+        # Get detailed session information
+        session_keys = redis_client.keys("anon_map:session_*")
+        session_keys = [k for k in session_keys if not k.endswith(('_request', '_meta', '_llm'))]
+        
+        sessions_detail = []
+        total_mappings = 0
+        
+        for session_key in session_keys[:10]:  # Limit to first 10 for performance
+            try:
+                mapping_json = redis_client.get(session_key)
+                if mapping_json:
+                    mapping = json.loads(mapping_json)
+                    mapping_count = len(mapping)
+                    total_mappings += mapping_count
+                    
+                    session_id = session_key.replace("anon_map:session_", "")
+                    
+                    # Get TTL if available
+                    ttl = redis_client.ttl(session_key)
+                    
+                    sessions_detail.append({
+                        "session_id": session_id,
+                        "mapping_count": mapping_count,
+                        "ttl_seconds": ttl if ttl > 0 else None,
+                        "sample_mappings": dict(list(mapping.items())[:3])  # First 3 mappings as sample
+                    })
+            except Exception as e:
+                sessions_detail.append({
+                    "session_id": session_key.replace("anon_map:session_", ""),
+                    "error": str(e)
+                })
+        
+        # Redis info
+        redis_info = redis_client.info()
+        
+        redis_metrics = {
+            "timestamp": time.time(),
+            "connection_status": "healthy",
+            "redis_info": {
+                "version": redis_info.get("redis_version"),
+                "memory_usage_bytes": redis_info.get("used_memory", 0),
+                "memory_usage_human": redis_info.get("used_memory_human"),
+                "connected_clients": redis_info.get("connected_clients", 0),
+                "total_keys": redis_info.get("db0", {}).get("keys", 0) if "db0" in redis_info else 0
+            },
+            "mapping_sessions": {
+                "total_sessions": len(session_keys),
+                "total_mapping_entries": total_mappings,
+                "avg_mappings_per_session": total_mappings / max(len(session_keys), 1),
+                "sessions_detail": sessions_detail
+            },
+            "prometheus_metrics": {
+                "redis_connection_status": redis_connection_status._value.get(),
+                "redis_mapping_sessions_total": redis_mapping_sessions_total._value.get(),
+                "redis_mapping_entries_total": redis_mapping_entries_total._value.get(),
+                "redis_memory_usage_bytes": redis_memory_usage_bytes._value.get()
+            }
+        }
+        
+        return JSONResponse(content=redis_metrics)
+        
+    except Exception as e:
+        return JSONResponse(
+            content={
+                "status": "error",
+                "error": str(e),
+                "timestamp": time.time()
+            },
             status_code=500
         )

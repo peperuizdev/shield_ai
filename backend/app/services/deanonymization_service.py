@@ -580,14 +580,15 @@ async def generate_real_time_dual_stream(
         full_deanonymized_response = ""
         chunk_count = 0
         
-        # Inicializar el procesador de chunks OPTIMIZADO (versión balanceada para streaming)
-        from services.chunk_deanonymizer import ChunkDeanonymizer
-        chunk_processor = ChunkDeanonymizer(reverse_map)
+        # Inicializar el procesador palabra por palabra OPTIMIZADO para streaming fluido
+        from services.word_by_word_deanonymizer import WordByWordDeanonymizer
+        word_processor = WordByWordDeanonymizer(reverse_map)
         
-        logger.info(f"🔧 ChunkDeanonymizer inicializado con {len(reverse_map)} entidades")
+        logger.info(f"🔧 WordByWordDeanonymizer inicializado con {len(reverse_map)} entidades")
+        logger.info(f"📊 Stats iniciales: {word_processor.get_stats()}")
         
         # STREAMING REAL-TIME DEL LLM
-        logger.info("🔥 Iniciando streaming real del LLM con buffer inteligente...")
+        logger.info("🔥 Iniciando streaming real del LLM con procesamiento palabra por palabra...")
         
         async for llm_chunk in llm_client.call_grok_stream(llm_prompt, temperature=0.1):
             chunk_count += 1
@@ -603,12 +604,16 @@ async def generate_real_time_dual_stream(
                 yield f"data: {json.dumps(error_data)}\n\n"
                 return
             
-            # Procesar chunk con buffer inteligente
-            anonymous_output, deanonymized_output = chunk_processor.process_chunk(llm_chunk)
+            # Procesar chunk palabra por palabra para streaming más fluido
+            deanonymized_output = word_processor.process_chunk(llm_chunk)
+            anonymous_output = llm_chunk  # Chunk original (datos anonimizados)
             
-            # Debug logging cada 10 chunks para diagnóstico
-            if chunk_count % 10 == 0:
-                logger.debug(f"📊 Chunk {chunk_count}: in='{llm_chunk[:30]}...', anon_out='{anonymous_output[:30]}...', deanon_out='{deanonymized_output[:30]}...'")
+            # Debug logging cada 20 chunks para diagnóstico (menos verbose)
+            if chunk_count % 20 == 0:
+                stats = word_processor.get_stats()
+                logger.debug(f"📊 Chunk {chunk_count}: in='{llm_chunk[:30]}...', "
+                           f"deanon_out='{deanonymized_output[:30]}...', "
+                           f"replacements={stats['names_replaced']}")
             
             # Acumular para guardar después
             full_anonymous_response += llm_chunk
@@ -647,7 +652,7 @@ async def generate_real_time_dual_stream(
                 logger.info(f"📊 Procesados {chunk_count} chunks en tiempo real")
         
         # Finalizar procesamiento y enviar cualquier texto pendiente
-        _, final_deanonymized = chunk_processor.finalize()
+        final_deanonymized = word_processor.flush_remaining()
         if final_deanonymized:
             full_deanonymized_response += final_deanonymized
             final_data = {
@@ -659,6 +664,10 @@ async def generate_real_time_dual_stream(
                 "is_final": True
             }
             yield f"data: {json.dumps(final_data)}\n\n"
+        
+        # Log estadísticas finales del procesador palabra por palabra
+        final_stats = word_processor.get_stats()
+        logger.info(f"📊 Estadísticas finales palabra por palabra: {final_stats}")
         
         # Guardar respuesta completa en Redis para consultas posteriores
         logger.info(f"💾 Guardando respuesta completa en Redis ({len(full_anonymous_response)} chars)")
