@@ -90,7 +90,7 @@ async def chat_stream_propuesta(
                 extracted_text = result['text']
                 
                 if message:
-                    input_text = f"Contexto del documento:\n{extracted_text}\n\nPregunta del usuario: {message}"
+                    input_text = f"Consulta del usuario: {message}\n\nContexto del documento:\n{extracted_text}"
                 else:
                     input_text = extracted_text
                 
