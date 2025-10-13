@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 
 from services.document_processing.factory import process_document
 from services.document_processing.base import DocumentProcessingError, DocumentValidationError
-from services.session_manager import get_anonymization_map
+from services.session.anonymization import get_anonymization_map
 from utils.helpers import generate_session_id
 
 router = APIRouter(prefix="/document", tags=["Document Processing"])
@@ -120,7 +120,7 @@ async def process_document_endpoint(
         
         if save_mapping and session_id and pii_mapping:
             try:
-                from services.session_manager import store_anonymization_map
+                from services.session.anonymization import store_anonymization_map
                 store_anonymization_map(session_id, pii_mapping)
                 logger.info(f"Anonymization mapping saved for session: {session_id}")
             except Exception as e:

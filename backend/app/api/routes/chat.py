@@ -4,17 +4,10 @@ Endpoint de chat que integra:
 2. MultiProviderLLMClient para Grok, OpenAI y Anthropic
 3. Sistema de desanonimización propio
 4. Sistema de datos sintéticos mejorado
-
-CAMBIOS REALIZADOS EN ESTE ARCHIVO:
-- Importar synthetic_data_generator para unificar generación de datos falsos
-- Modificar endpoint /streaming para retornar StreamingResponse real
-- Usar generate_real_time_dual_stream() para streaming SSE correcto
-- Guardar texto anonimizado en Redis para que test.html pueda cargarlo
-- FORZAR use_realistic_fake=True para siempre usar datos sintéticos realistas
-- ELIMINAR post-procesamiento redundante (PASO 2.2) ya que pii_detector lo hace
+5. Procesamiento de documentos (PDF, Word, Excel)
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, Dict
@@ -61,24 +54,69 @@ class ChatResponse(BaseModel):
     llm_model: str
 
 @router.post("/streaming")
-async def chat_stream_propuesta(request: ChatRequest):
+async def chat_stream_propuesta(
+    file: Optional[UploadFile] = File(None),
+    message: Optional[str] = Form(None),
+    session_id: Optional[str] = Form(None),
+    llm_prompt_template: Optional[str] = Form(None),
+    model: Optional[str] = Form("es"),
+    use_regex: Optional[bool] = Form(True),
+    pseudonymize: Optional[bool] = Form(False),
+    save_mapping: Optional[bool] = Form(True),
+    use_realistic_fake: Optional[bool] = Form(False)
+):
     try:
         start_time = time.time()
-        session_id = request.session_id or f"stream_session_{int(time.time())}"
+        session_id = session_id or f"stream_session_{int(time.time())}"
         existing_mapping = None
 
-        # PASO 1: OBTENER MAPA EXISTENTE
-        if request.save_mapping and session_id:
+        input_text = None
+        
+        if file:
             try:
-                from services.session_manager import get_anonymization_map
+                from services.document_processing.factory import process_document
+                
+                file_content = await file.read()
+                
+                if len(file_content) == 0:
+                    raise HTTPException(status_code=400, detail="Archivo vacío")
+                
+                result = process_document(
+                    file_content=file_content,
+                    filename=file.filename,
+                    content_type=file.content_type
+                )
+                
+                extracted_text = result['text']
+                
+                if message:
+                    input_text = f"Contexto del documento:\n{extracted_text}\n\nPregunta del usuario: {message}"
+                else:
+                    input_text = extracted_text
+                
+                logger.info(f"Texto extraído del documento: {len(extracted_text)} caracteres")
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                logger.error(f"Error procesando documento: {str(e)}")
+                raise HTTPException(status_code=400, detail=f"Error procesando documento: {str(e)}")
+        
+        elif message:
+            input_text = message
+        else:
+            raise HTTPException(status_code=400, detail="Debe proporcionar 'message' o 'file'")
+
+        if save_mapping and session_id:
+            try:
+                from services.session.anonymization import get_anonymization_map
                 existing_mapping = get_anonymization_map(session_id)
                 logger.info(f"MAPA EXISTENTE ENCONTRADO para sesión {session_id}: {len(existing_mapping)} entidades")
             except Exception:
                 existing_mapping = None
 
-        # PASO 2: ANONIMIZACIÓN
         if existing_mapping:
-            anonymized_text = anonymize_with_existing_map(request.message, existing_mapping)
+            anonymized_text = anonymize_with_existing_map(input_text, existing_mapping)
             mapping = existing_mapping
             pii_detected = True
         else:
@@ -88,34 +126,32 @@ async def chat_stream_propuesta(request: ChatRequest):
                 raise HTTPException(status_code=500, detail="Pipeline de anonimización no disponible")
 
             anonymization_result = run_pipeline(
-                model=request.model,
-                text=request.message,
-                use_regex=request.use_regex,
+                model=model,
+                text=input_text,
+                use_regex=use_regex,
                 pseudonymize=False,
                 save_mapping=False,
                 use_realistic_fake=True
             )
-            anonymized_text = anonymization_result.get('anonymized', request.message)
+            anonymized_text = anonymization_result.get('anonymized', input_text)
             mapping = anonymization_result.get('mapping', {})
             pii_detected = bool(mapping)
 
-        # PASO 3: GUARDAR MAPA EN REDIS
-        if mapping and request.save_mapping:
+        if mapping and save_mapping:
             try:
-                from services.session_manager import store_anonymization_map, store_anonymized_request
+                from services.session.anonymization import store_anonymization_map
+                from services.session.llm_data import store_anonymized_request
                 store_anonymization_map(session_id, mapping)
                 store_anonymized_request(session_id, anonymized_text)
                 logger.info(f"✅ Texto anonimizado guardado en Redis para sesión {session_id}")
             except Exception as e:
                 logger.warning(f"No se pudo guardar mapa en Redis: {e}")
 
-        # PASO 4: PREPARAR PROMPT PARA LLM
-        if request.llm_prompt_template:
-            llm_prompt = request.llm_prompt_template.format(text=anonymized_text)
+        if llm_prompt_template:
+            llm_prompt = llm_prompt_template.format(text=anonymized_text)
         else:
             llm_prompt = f"Actúa como un asistente útil, en caso de que proporcione nombre no lo abrevies, ignora diferencias entre el nombre y el correo (no digas nada al respecto), si hay algun numero de telefono devuelve sus espacios con guiones solo en este formato por ejemplo (+34-654-768-750) de igual forma responde de manera clara y completa a la siguiente consulta: {anonymized_text}"
 
-        # PASO 5: RETORNAR STREAMING RESPONSE REAL
         llm_client = LLMClientPropuesta()
         
         return StreamingResponse(
@@ -141,7 +177,7 @@ async def chat_stream_propuesta(request: ChatRequest):
 @router.post("/test-anonymization-consistency")
 async def test_anonymization_consistency(request: ChatRequest):
     try:
-        from services.session_manager import get_anonymization_map, store_anonymization_map
+        from services.session.anonymization import get_anonymization_map, store_anonymization_map
         session_id = request.session_id or "test_consistency"
 
         try:
