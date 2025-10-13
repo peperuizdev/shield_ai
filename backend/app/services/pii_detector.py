@@ -15,20 +15,18 @@ import hashlib
 from typing import List, Dict, Tuple
 from datetime import datetime
 
-# Optional improved validators
 try:
-    from dateutil import parser as date_parser  # type: ignore
+    from dateutil import parser as date_parser
     DATEUTIL_AVAILABLE = True
 except Exception:
     DATEUTIL_AVAILABLE = False
 
 try:
-    import phonenumbers  # type: ignore
+    import phonenumbers
     PHONENUMBERS_AVAILABLE = True
 except Exception:
     PHONENUMBERS_AVAILABLE = False
 
-# Import synthetic data generator
 try:
     from services.synthetic_data_generator import EnhancedSyntheticDataGenerator
     SYNTHETIC_GENERATOR_AVAILABLE = True
@@ -88,7 +86,7 @@ def anonymize_with_hf(text: str, hf_model: str):
 
 def _regex_patterns() -> Dict[str, str]:
     return {
-        'CARD': r"\b(?:\d[ -]*?){15,19}\b",  # Mínimo 15 dígitos para evitar conflicto con DNIs
+        'CARD': r"\b(?:\d[ -]*?){15,19}\b",
         'IBAN': r"\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]{4}){3,7}\s?[A-Z0-9]{1,4}\b",
         'EMAIL': r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
         'PHONE': r"\+?\d[\d\s\-()]{6,}\d",
@@ -184,15 +182,40 @@ def _is_valid_iban(val: str) -> bool:
 
 
 def _is_valid_dni(val: str) -> bool:
-    """Valida DNI español usando algoritmo de letra de control"""
     if not re.match(r"^\d{8}[A-Z]$", val):
         return False
     
-    # Tabla de letras de control para DNIs españoles
     letters = "TRWAGMYFPDXBNJZSQVHLCKE"
     number = int(val[:8])
     expected_letter = letters[number % 23]
     return val[8] == expected_letter
+
+
+def _is_valid_dob(val: str) -> bool:
+    date_patterns = [
+        (r'^\d{2}[-/]\d{2}[-/]\d{4}$', ['%d/%m/%Y', '%d-%m-%Y']),
+        (r'^\d{4}[-/]\d{2}[-/]\d{2}$', ['%Y-%m-%d', '%Y/%m/%d']),
+        (r'^\d{8}$', ['%Y%m%d', '%d%m%Y'])
+    ]
+    
+    for pattern, formats in date_patterns:
+        if re.match(pattern, val):
+            for fmt in formats:
+                try:
+                    parsed_date = datetime.strptime(val.replace('/', '-') if '/' in val else val, fmt.replace('/', '-'))
+                    
+                    if parsed_date.year < 1920 or parsed_date.year > 2010:
+                        return False
+                    
+                    current_year = datetime.now().year
+                    if parsed_date.year > current_year:
+                        return False
+                    
+                    return True
+                except ValueError:
+                    continue
+    
+    return False
 
 
 def validate_mapping(mapping: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str, str]]:
@@ -233,6 +256,11 @@ def validate_mapping(mapping: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str,
                     suspects[tok] = orig
             elif lower.startswith('dni_') or lower.startswith('[dni') or lower.startswith('dni'):
                 if _is_valid_dni(orig):
+                    valid[tok] = orig
+                else:
+                    suspects[tok] = orig
+            elif lower.startswith('dob_') or lower.startswith('[dob') or lower.startswith('dob'):
+                if _is_valid_dob(orig):
                     valid[tok] = orig
                 else:
                     suspects[tok] = orig
@@ -475,6 +503,41 @@ def resolve_matches(hf_matches, regex_matches):
     return chosen_sorted
 
 
+def _is_likely_dob(text: str) -> bool:
+    if not text or len(text) < 6:
+        return False
+    
+    digits = re.sub(r'[^\d]', '', text)
+    if len(digits) < 6 or len(digits) > 8:
+        return False
+    
+    date_patterns = [
+        r'^\d{2}[-/]\d{2}[-/]\d{4}$',
+        r'^\d{4}[-/]\d{2}[-/]\d{2}$',
+        r'^\d{8}$'
+    ]
+    
+    matches_pattern = any(re.match(pattern, text.strip()) for pattern in date_patterns)
+    if not matches_pattern:
+        return False
+    
+    if DATEUTIL_AVAILABLE:
+        try:
+            parsed = date_parser.parse(text, fuzzy=False)
+            if 1920 <= parsed.year <= 2010:
+                return True
+        except Exception:
+            pass
+    
+    for year_candidate in [text[:4], text[-4:], text[2:6], text[4:8]]:
+        if year_candidate.isdigit():
+            year = int(year_candidate)
+            if 1920 <= year <= 2010:
+                return True
+    
+    return False
+
+
 def apply_replacements_from_matches(original_text: str, matches: List[Dict], use_pseudo: bool = False, pseudo_key: str = None, use_realistic_fake: bool = False):
     anonymized = original_text
     mapping: Dict[str, str] = {}
@@ -502,21 +565,14 @@ def apply_replacements_from_matches(original_text: str, matches: List[Dict], use
         
         if orig.strip().isdigit() and len(orig.strip()) < 4:
             continue
-            
-        is_date_like = False
-        if DATEUTIL_AVAILABLE:
-            try:
-                d = date_parser.parse(orig, fuzzy=False)
-                if 1900 <= d.year <= 2025:
-                    is_date_like = True
-            except Exception:
-                is_date_like = False
-        else:
-            if re.match(r"^\d{2}[-/]\d{2}[-/]\d{4}$", orig) or re.match(r"^\d{4}[-/]\d{2}[-/]\d{2}$", orig):
-                is_date_like = True
-
+        
+        is_date_like = _is_likely_dob(orig)
+        
         if label.upper() in ('PHONE', 'PHONE_R', 'PHONE_HF') and is_date_like:
             label = 'DOB'
+        elif label.upper() == 'MISC' and is_date_like:
+            label = 'DOB'
+        
         keylabel = label
         if src == 'hf':
             ns = 'HF'
@@ -622,11 +678,6 @@ def run_pipeline(model: str, text: str, use_regex: bool = False, pseudonymize: b
 
 
 def cli(argv: List[str]):
-    """Command-line interface wrapper for running the pipeline from this module.
-
-    This mirrors the original pipeline.py CLI so the interactive prompts work
-    the same as before.
-    """
     import argparse
 
     p = argparse.ArgumentParser(description="Anon pipeline using HF NER (HF-only mode)")
