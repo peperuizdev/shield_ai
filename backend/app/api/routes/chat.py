@@ -150,7 +150,11 @@ async def chat_stream_propuesta(
         if llm_prompt_template:
             llm_prompt = llm_prompt_template.format(text=anonymized_text)
         else:
-            llm_prompt = f"Actúa como un asistente útil, en caso de que proporcione nombre no lo abrevies, ignora diferencias entre el nombre y el correo (no digas nada al respecto), si hay algun numero de telefono devuelve sus espacios con guiones solo en este formato por ejemplo (+34-654-768-750) de igual forma responde de manera clara y completa a la siguiente consulta: {anonymized_text}"
+            llm_prompt = f"""Responde como un asistente útil a esta consulta:
+
+            {anonymized_text}
+
+            Responde de manera clara y completa, manteniendo todos los datos de contacto exactamente como aparecen."""
 
         llm_client = LLMClientPropuesta()
         
