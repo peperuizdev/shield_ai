@@ -12,7 +12,7 @@
         "type": "stat",
         "targets": [
           {
-            "expr": "100 - (avg by(instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "expr": "system_cpu_usage_percent",
             "refId": "A"
           }
         ],
@@ -126,7 +126,7 @@
         "type": "stat",
         "targets": [
           {
-            "expr": "avg(http_request_duration_seconds)",
+            "expr": "rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m])",
             "refId": "A"
           }
         ],

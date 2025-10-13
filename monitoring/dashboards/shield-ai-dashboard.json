@@ -101,7 +101,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "100 - (avg by(instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+          "expr": "system_cpu_usage_percent",
           "interval": "",
           "legendFormat": "CPU Usage %",
           "refId": "A"
@@ -200,7 +200,7 @@
       "pluginVersion": "7.5.7",
       "targets": [
         {
-          "expr": "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100",
+          "expr": "system_memory_usage_bytes / (1024^3)",
           "interval": "",
           "legendFormat": "Memory Usage",
           "refId": "A"
@@ -256,9 +256,9 @@
       "pluginVersion": "7.5.7",
       "targets": [
         {
-          "expr": "rate(http_requests_total[5m]) * 60",
+          "expr": "sum(rate(http_requests_total[5m])) * 60",
           "interval": "",
-          "legendFormat": "Requests per minute",
+          "legendFormat": "Total Requests per minute",
           "refId": "A"
         }
       ],
@@ -317,7 +317,7 @@
       "pluginVersion": "7.5.7",
       "targets": [
         {
-          "expr": "avg(http_request_duration_seconds)",
+          "expr": "sum(rate(http_request_duration_seconds_sum[5m])) / sum(rate(http_request_duration_seconds_count[5m]))",
           "interval": "",
           "legendFormat": "Average Response Time",
           "refId": "A"
