@@ -37,6 +37,19 @@ numpy==1.26.4
 faker==19.4.0
 
 # -------------------------
+# Image Processing & Computer Vision
+# -------------------------
+opencv-python-headless==4.8.1.78
+Pillow==10.1.0
+
+# Face Detection (choose one or install both for fallback)
+retinaface==0.0.13        
+mtcnn==0.1.1             
+
+# Object Detection (for license plates)
+ultralytics==8.0.200     
+
+# -------------------------
 # HTTP & Networking (CORREGIDO)
 # -------------------------
 requests>=2.31.0,<3
