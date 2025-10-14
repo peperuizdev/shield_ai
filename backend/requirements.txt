@@ -43,7 +43,7 @@ opencv-python-headless==4.8.1.78
 Pillow==10.1.0
 
 # Face Detection (choose one or install both for fallback)
-retinaface==0.0.13        
+retinaface==1.1.1       
 mtcnn==0.1.1             
 
 # Object Detection (for license plates)
