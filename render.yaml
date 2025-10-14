@@ -1,20 +1,28 @@
-# render.yaml
+# render.yaml - Colocar en la RAÍZ del proyecto
 services:
-  # Redis
+  # Redis Database
   - type: redis
     name: redis-llm
     plan: free
+    maxmemoryPolicy: noeviction
     ipAllowList: []
 
-  # Backend API
+  # Backend FastAPI
   - type: web
-    name: fastapi-backend
+    name: llm-backend
     env: docker
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     plan: free
     healthCheckPath: /api/health
     envVars:
+      # Environment
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      
+      # Redis connection (automático desde el servicio Redis)
       - key: REDIS_HOST
         fromService:
           type: redis
@@ -25,24 +33,37 @@ services:
           type: redis
           name: redis-llm
           property: port
+      
+      # Python version
       - key: PYTHON_VERSION
-        value: 3.10
-      # Añade tus API keys como variables de entorno en el dashboard de Render
+        value: "3.10"
+      
+      # API Keys (configurar manualmente en Render Dashboard - IMPORTANTE!)
       - key: OPENAI_API_KEY
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      
+      # Frontend URL (se actualizará después de crear el frontend)
+      - key: FRONTEND_URL
+        sync: false
+      
+      # CORS Origins adicionales (opcional)
+      - key: ALLOWED_ORIGINS
+        value: ""
 
-  # Frontend
+  # Frontend React/Next.js
   - type: web
-    name: react-frontend
+    name: llm-frontend
     env: docker
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
     plan: free
     envVars:
+      # URL del backend - Render construye la URL automáticamente
       - key: REACT_APP_API_URL
-        fromService:
-          type: web
-          name: fastapi-backend
-          property: url
+        value: https://llm-backend.onrender.com
+      
+      # Si usas Next.js, también añade:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://llm-backend.onrender.com
