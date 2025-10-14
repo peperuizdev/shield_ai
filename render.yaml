@@ -19,6 +19,7 @@ services:
       # Environment
       - key: ENVIRONMENT
         value: production
+      
       - key: DEBUG
         value: false
       
@@ -28,29 +29,19 @@ services:
           type: redis
           name: redis-llm
           property: host
+      
       - key: REDIS_PORT
         fromService:
           type: redis
           name: redis-llm
           property: port
       
-      # Python version
-      - key: PYTHON_VERSION
-        value: "3.10"
-      
-      # API Keys (configurar manualmente en Render Dashboard - IMPORTANTE!)
+      # API Keys (configurar manualmente en Render Dashboard)
       - key: OPENAI_API_KEY
         sync: false
+      
       - key: ANTHROPIC_API_KEY
         sync: false
-      
-      # Frontend URL (se actualizará después de crear el frontend)
-      - key: FRONTEND_URL
-        sync: false
-      
-      # CORS Origins adicionales (opcional)
-      - key: ALLOWED_ORIGINS
-        value: ""
 
   # Frontend React/Next.js
   - type: web
@@ -60,10 +51,10 @@ services:
     dockerContext: ./frontend
     plan: free
     envVars:
-      # URL del backend - Render construye la URL automáticamente
+      # URL del backend
       - key: REACT_APP_API_URL
         value: https://llm-backend.onrender.com
       
-      # Si usas Next.js, también añade:
+      # Si usas Next.js:
       - key: NEXT_PUBLIC_API_URL
         value: https://llm-backend.onrender.com
