@@ -90,7 +90,7 @@ async def chat_stream_propuesta(
                 extracted_text = result['text']
                 
                 if message:
-                    input_text = f"Contexto del documento:\n{extracted_text}\n\nPregunta del usuario: {message}"
+                    input_text = f"Consulta del usuario: {message}\n\nContexto del documento:\n{extracted_text}"
                 else:
                     input_text = extracted_text
                 
@@ -150,7 +150,23 @@ async def chat_stream_propuesta(
         if llm_prompt_template:
             llm_prompt = llm_prompt_template.format(text=anonymized_text)
         else:
-            llm_prompt = f"Actúa como un asistente útil, en caso de que proporcione nombre no lo abrevies, ignora diferencias entre el nombre y el correo (no digas nada al respecto), si hay algun numero de telefono devuelve sus espacios con guiones solo en este formato por ejemplo (+34-654-768-750) de igual forma responde de manera clara y completa a la siguiente consulta: {anonymized_text}"
+            llm_prompt = f"""Como asistente especializado, analiza la siguiente información y responde a la consulta del usuario:
+
+            {anonymized_text}
+
+            DIRECTRICES ESPECÍFICAS:
+            - Enumera cada elemento individualmente, usando números o viñetas
+            - NO uses formato de tabla, columnas o estructuras tabulares
+            - Para cada persona o registro, preséntalo como un ítem separado y bien diferenciado
+            - Mantén todos los valores exactamente como aparecen en la información original
+            - Usa un formato claro: "1. [Nombre] - [Detalles]" o similar
+            - Si hay múltiples campos, sepáralos con " | " o guiones, pero nunca en columnas
+
+            Ejemplo de formato esperado:
+            1. Laura Sánchez Pérez | laura.sanchez@email.com | +34 612 345 678 | Madrid
+            2. Carlos Ruiz Morales | c.ruiz@empresa.com | +34 679 442 110 | Barcelona
+
+            Tu respuesta debe ser fácil de leer y seguir, evitando cualquier estructura tabular."""
 
         llm_client = LLMClientPropuesta()
         
