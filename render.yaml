@@ -1,0 +1,48 @@
+# render.yaml
+services:
+  # Redis
+  - type: redis
+    name: redis-llm
+    plan: free
+    ipAllowList: []
+
+  # Backend API
+  - type: web
+    name: fastapi-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: redis-llm
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: redis
+          name: redis-llm
+          property: port
+      - key: PYTHON_VERSION
+        value: 3.10
+      # Añade tus API keys como variables de entorno en el dashboard de Render
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  # Frontend
+  - type: web
+    name: react-frontend
+    env: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: free
+    envVars:
+      - key: REACT_APP_API_URL
+        fromService:
+          type: web
+          name: fastapi-backend
+          property: url

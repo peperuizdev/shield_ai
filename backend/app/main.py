@@ -17,13 +17,14 @@ from api.routes.chat import router as chat_router
 from api.routes.document_processing import router as document_processing_router
 from api.routes.debug_routes import router as debug_router
 
-app.include_router(health_router)
-app.include_router(sessions_router)
-app.include_router(anonymization_router, tags=["Anonymization"])
-app.include_router(deanonymization_router, tags=["Deanonymization"])
-app.include_router(chat_router, tags=["Chat"])
-app.include_router(document_processing_router, tags=["Document Processing"])
-app.include_router(debug_router, tags=["Debug"])
+# Registrar rutas con sus prefijos
+app.include_router(health_router, prefix="/api", tags=["Health"])
+app.include_router(sessions_router, prefix="/api/sessions", tags=["Sessions"])
+app.include_router(anonymization_router, prefix="/api/anonymization", tags=["Anonymization"])
+app.include_router(deanonymization_router, prefix="/api/deanonymization", tags=["Deanonymization"])
+app.include_router(chat_router, prefix="/api/chat", tags=["Chat"])
+app.include_router(document_processing_router, prefix="/api/document-processing", tags=["Document Processing"])
+app.include_router(debug_router, prefix="/api/debug", tags=["Debug"])
 
 
 # === MAIN APPLICATION ENTRY POINT ===
