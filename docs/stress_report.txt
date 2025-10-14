@@ -1,0 +1,9 @@
+--- Stress Test Report ---
+Total Requests: 1276
+Total Failures: 0
+Max Response Time (ms): 155218.87
+Min Response Time (ms): 4.88
+Test Duration (s): 232.45
+Requests per Second: 5.49
+Failure Rate: 0.00%
+Estimated Max Concurrent Users Supported: Límite alcanzado o degradación detectada

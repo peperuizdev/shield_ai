@@ -84,6 +84,32 @@ def anonymize_with_hf(text: str, hf_model: str):
     return anonymized, mapping
 
 
+# def _regex_patterns() -> Dict[str, str]:
+#     return {
+#         'CARD': r"\b(?:\d[ -]*?){15,19}\b",
+#         'IBAN': r"\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]{4}){3,7}\s?[A-Z0-9]{1,4}\b",
+#         'EMAIL': r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+#         'PHONE': r"\+?\d[\d\s\-()]{6,}\d",
+#         'DNI': r"\b\d{8}[A-Z]\b",
+#     }
+# # ...existing code...
+# def _regex_patterns() -> Dict[str, str]:
+#     return {
+#         'CARD': r"\b(?:\d[ -]*?){15,19}\b",
+#         'IBAN': r"\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]{4}){3,7}\s?[A-Z0-9]{1,4}\b",
+#         'EMAIL': r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+#         'PHONE': r"\+?\d[\d\s\-()]{6,}\d",
+#         'DNI': r"\b\d{8}[A-Z]\b",
+#         'DATE': r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{1,2} de [a-zA-Z]+ de \d{4}\b",
+#         'HOUR': r"\b\d{1,2}:\d{2}(?:\s?[APMapm]{2})?\b",
+#         'URL': r"https?://[^\s]+",
+#         # Opcional: nombres capitalizados (puede dar falsos positivos)
+#         'NAME': r"\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)\b",
+#     }
+# # ...existing code...
+# ...existing code...
+import re
+
 def _regex_patterns() -> Dict[str, str]:
     return {
         'CARD': r"\b(?:\d[ -]*?){15,19}\b",
@@ -91,7 +117,38 @@ def _regex_patterns() -> Dict[str, str]:
         'EMAIL': r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
         'PHONE': r"\+?\d[\d\s\-()]{6,}\d",
         'DNI': r"\b\d{8}[A-Z]\b",
+        'EMPRESA': r"\b[A-Z][a-zA-Z0-9&.\s]{2,}S\.A\.|\b[A-Z][a-zA-Z0-9&.\s]{2,}S\.L\.",
+        'DATE': r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{1,2} de [a-zA-Z]+ de \d{4}\b",
+        'HOUR': r"\b\d{1,2}:\d{2}(?:\s?[APMapm]{2})?\b",
+        'URL': r"https?://[^\s]+",
+        # Opcional: nombres capitalizados (puede dar falsos positivos)
+        'NAME': r"\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)\b",
     }
+
+def generate_token(entity_type, idx):
+    return f"__{entity_type.upper()}_{idx}__"
+
+def anonymize_text(text):
+    patterns = _regex_patterns()
+    mapping = {}
+    idx_counters = {k: 1 for k in patterns.keys()}
+    for entity_type, pattern in patterns.items():
+        def repl(match):
+            token = generate_token(entity_type, idx_counters[entity_type])
+            mapping[token] = match.group()
+            idx_counters[entity_type] += 1
+            return token
+        text = re.sub(pattern, repl, text)
+    return text, mapping
+
+# Ejemplo de uso dentro de run_pipeline:
+def run_pipeline(model, text, use_regex=True, pseudonymize=False, save_mapping=True):
+    mapping = {}
+    if use_regex:
+        text, mapping = anonymize_text(text)
+    # ...lógica existente para modelo, si aplica...
+    return text, mapping
+# ...existing code...
 
 
 def pseudonymize_value(value: str, key: str) -> str:
