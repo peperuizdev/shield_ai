@@ -26,9 +26,6 @@ apiClient.interceptors.response.use(
 
 class AnonymizationService {
  
-  /**
-   * Obtener texto anonimizado desde Redis
-   */
   async getAnonymizedRequest(sessionId) {
     console.log('📤 Llamando a /anonymize/session/{session_id}/anonymized-request...');
     
@@ -43,9 +40,6 @@ class AnonymizationService {
     };
   }
 
-  /**
-   * Obtener texto anonimizado con reintentos
-   */
   async getAnonymizedRequestWithRetry(sessionId, maxRetries = 10, delayMs = 300) {
     for (let i = 0; i < maxRetries; i++) {
       try {
@@ -123,9 +117,6 @@ class AnonymizationService {
     }
   }
 
-  /**
-   * Procesar dual streaming chat
-   */
   async processDualStreamingChat(requestData, callbacks = {}) {
     const { sessionId, text, file, image } = requestData;
     const {
@@ -138,15 +129,26 @@ class AnonymizationService {
     } = callbacks;
 
     try {
-      const chatRequest = {
-        message: text || '',
-        session_id: sessionId,
-        model: 'es',
-        use_regex: true,
-        pseudonymize: true,
-        save_mapping: true, 
-        use_realistic_fake: true
-      };
+      const formData = new FormData();
+      
+      if (text) {
+        formData.append('message', text);
+      }
+      
+      formData.append('session_id', sessionId);
+      formData.append('model', 'es');
+      formData.append('use_regex', 'true');
+      formData.append('pseudonymize', 'true');
+      formData.append('save_mapping', 'true');
+      formData.append('use_realistic_fake', 'true');
+      
+      if (file) {
+        formData.append('file', file);
+      }
+      
+      if (image) {
+        formData.append('file', image);
+      }
 
       console.log('📤 Llamando a /chat/streaming con session_id:', sessionId);
 
@@ -154,10 +156,7 @@ class AnonymizationService {
 
       const response = await fetch(`${API_BASE_URL}/chat/streaming`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(chatRequest),
+        body: formData,
       });
 
       if (!response.ok) {
@@ -187,7 +186,6 @@ class AnonymizationService {
               console.log('📥 Evento SSE recibido:', eventData.type);
               
               switch (eventData.type) {
-                // Manejar evento metadata
                 case 'metadata':
                   console.log('📊 Metadata detectado:', eventData);
                   if (onMetadata) {
@@ -268,7 +266,6 @@ class AnonymizationService {
     }
   }
 
-  // Métodos legacy mantenidos para compatibilidad
   async anonymizeText(data) {
     console.warn('⚠️ anonymizeText() está deprecated. Usa getAnonymizedRequest()');
     return this.getAnonymizedRequest(data.session_id);
@@ -325,18 +322,18 @@ class AnonymizationService {
       const testText = "Hola, soy Juan Pérez de Madrid";
 
       console.log('🧪 Testing /chat/streaming...');
+      
+      const formData = new FormData();
+      formData.append('message', testText);
+      formData.append('session_id', sessionId);
+      formData.append('model', 'es');
+      formData.append('save_mapping', 'true');
+      
       const streamingResponse = await fetch(`${API_BASE_URL}/chat/streaming`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: testText,
-          session_id: sessionId,
-          model: 'es',
-          save_mapping: true
-        }),
+        body: formData,
       });
 
-      // Esperar para que se guarde el texto anonimizado
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       console.log('🧪 Testing /anonymized-request...');

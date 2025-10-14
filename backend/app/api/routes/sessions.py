@@ -12,8 +12,11 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Path, Query, Depends
 from fastapi.responses import JSONResponse
 
-from services.session_manager import (
+from services.session.anonymization import (
     store_anonymization_map,
+    get_anonymization_map
+)
+from services.session.manager import (
     get_session_status,
     delete_session,
     extend_session_ttl,

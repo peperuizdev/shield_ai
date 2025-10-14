@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from typing import Dict, List, Any, AsyncGenerator
-from .session_manager import get_anonymization_map, store_anonymization_map
+from services.session.anonymization import get_anonymization_map, store_anonymization_map
 
 # =====================================================
 # CONFIGURACIÓN DE STREAMING
@@ -663,7 +663,7 @@ async def generate_real_time_dual_stream(
         # Guardar respuesta completa en Redis para consultas posteriores
         logger.info(f"💾 Guardando respuesta completa en Redis ({len(full_anonymous_response)} chars)")
         try:
-            from services.session_manager import store_llm_response
+            from services.session.llm_data import store_llm_response
             store_llm_response(session_id, full_anonymous_response)
         except Exception as e:
             logger.warning(f"⚠️ No se pudo guardar respuesta LLM en Redis: {e}")

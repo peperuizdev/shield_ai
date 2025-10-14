@@ -14,7 +14,6 @@ const InputPanel = () => {
     actions.setInputText(e.target.value);
   };
 
-  // Generar preview cuando se sube una imagen
   useEffect(() => {
     if (state.inputImage) {
       const reader = new FileReader();
@@ -35,7 +34,6 @@ const InputPanel = () => {
       }
       actions.setInputFile(file);
     }
-    // Reset input para permitir seleccionar el mismo archivo
     event.target.value = '';
   };
 
@@ -47,7 +45,6 @@ const InputPanel = () => {
       }
       actions.setInputImage(image);
     }
-    // Reset input para permitir seleccionar la misma imagen
     event.target.value = '';
   };
 
@@ -68,6 +65,12 @@ const InputPanel = () => {
       actions.clearError();
       actions.resetProcess();
       
+      const hasDocument = state.inputFile || state.inputImage;
+      
+      if (hasDocument) {
+        actions.setProcessingDocument(true);
+      }
+      
       const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       actions.setSessionId(sessionId);
 
@@ -80,9 +83,11 @@ const InputPanel = () => {
 
       console.log('🚀 Iniciando flujo completo: Anonimización + Dual Streaming');
 
-      // ⚠️ CALLBACKS SIN MODIFICAR - Como en tu código original
       await anonymizationService.processCompleteFlow(requestData, {
         onAnonymized: (anonymizedData) => {
+          if (hasDocument) {
+            actions.setProcessingDocument(false);
+          }
           actions.setAnonymizedText(anonymizedData.text);
           console.log('✅ Panel 1 actualizado - Datos anonimizados');
         },
@@ -114,6 +119,7 @@ const InputPanel = () => {
           console.error('❌ Error en flujo completo:', error);
           actions.setError(error.message);
           actions.stopStreaming();
+          actions.setProcessingDocument(false);
         }
       });
 
@@ -121,6 +127,7 @@ const InputPanel = () => {
       console.error('❌ Error general en flujo:', error);
       actions.setError(`Error en el proceso: ${error.message}`);
       actions.stopStreaming();
+      actions.setProcessingDocument(false);
     } finally {
       actions.setLoading(false);
     }
@@ -131,9 +138,9 @@ const InputPanel = () => {
       const results = await anonymizationService.testEndpoints();
       console.log('🧪 Test de endpoints:', results);
       
-      if (results.anonymize?.status === 'success' && results.streaming?.status === 'success') {
+      if (results.streaming?.status === 'success') {
         actions.clearError();
-        alert(`✅ Ambos endpoints funcionando\n\n/anonymize: ✅ PII detectado: ${results.anonymize.pii_detected}\n/chat/streaming: ✅ Status: ${results.streaming.statusCode}\n\nTexto anonimizado: ${results.anonymize.anonymized}`);
+        alert(`✅ Endpoint funcionando\n\n/chat/streaming: ✅ Status: ${results.streaming.statusCode}`);
       } else {
         actions.setError(`❌ Error en endpoints: ${results.error || 'Algún endpoint falló'}`);
       }
@@ -170,20 +177,18 @@ const InputPanel = () => {
     }
   };
 
-  // ✨ SOLO CAMBIO ESTÉTICO: Padding dinámico más compacto
   const textareaPaddingTop = currentAttachment ? (state.inputImage ? '90px' : '70px') : '12px';
 
   return (
-    <div className="bg-white rounded-xl shadow-brand border border-gray-200 overflow-hidden">
-      {/* Header - Sin cambios */}
-      <div className="bg-gradient-to-r from-brand-primary to-brand-secondary px-6 py-4">
-        <div className="flex justify-between items-start">
+    <div className="overflow-hidden bg-white border border-gray-200 rounded-xl shadow-brand">
+      <div className="px-6 py-4 bg-gradient-to-r from-brand-primary to-brand-secondary">
+        <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
+            <h2 className="flex items-center space-x-2 text-lg font-semibold text-white">
               <FileText className="w-5 h-5" />
               <span>Entrada de Datos</span>
             </h2>
-            <p className="text-brand-light text-sm mt-1">
+            <p className="mt-1 text-sm text-brand-light">
               Introduce tu consulta para ver el proceso completo: anonimización + comparación de respuestas IA
             </p>
           </div>
@@ -193,7 +198,7 @@ const InputPanel = () => {
               onClick={handleTestEndpoints}
               variant="outline"
               size="sm"
-              className="bg-white bg-opacity-20 border-white border-opacity-30 text-white hover:bg-opacity-30"
+              className="text-white bg-white border-white bg-opacity-20 border-opacity-30 hover:bg-opacity-30"
             >
               🧪 Test
             </Button>
@@ -201,24 +206,20 @@ const InputPanel = () => {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="p-6">
         <div className="space-y-4">
-          {/* ✨ CAMBIO ESTÉTICO: Contenedor relativo para overlay integrado */}
           <div className="relative">
-            {/* ✨ NUEVO: Overlay minimalista DENTRO del textarea */}
             {currentAttachment && (
-              <div className="absolute top-3 left-3 right-3 z-10 animate-fade-in pointer-events-none">
+              <div className="absolute z-10 pointer-events-none top-3 left-3 right-3 animate-fade-in">
                 <div className="bg-white border border-gray-200 rounded-lg p-2.5 shadow-sm pointer-events-auto hover:shadow-md transition-shadow">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      {/* Preview de Imagen o Icono */}
                       <div className="flex-shrink-0">
                         {state.inputImage && imagePreview ? (
                           <img 
                             src={imagePreview} 
                             alt="Preview" 
-                            className="w-14 h-14 object-cover rounded border border-gray-200"
+                            className="object-cover border border-gray-200 rounded w-14 h-14"
                           />
                         ) : (
                           <div className="bg-gray-50 rounded p-1.5">
@@ -227,8 +228,7 @@ const InputPanel = () => {
                         )}
                       </div>
                       
-                      {/* Info del Archivo */}
-                      <div className="min-w-0 flex-1">
+                      <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-gray-900 truncate">
                           {currentAttachment.name}
                         </p>
@@ -238,11 +238,10 @@ const InputPanel = () => {
                       </div>
                     </div>
                     
-                    {/* Botón Eliminar */}
                     <button
                       onClick={handleRemoveAttachment}
                       disabled={isDisabled}
-                      className="flex-shrink-0 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex-shrink-0 p-1 text-gray-400 transition-colors rounded hover:bg-gray-100 hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                       title="Quitar adjunto"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -252,7 +251,6 @@ const InputPanel = () => {
               </div>
             )}
 
-            {/* ✨ CAMBIO: Textarea con padding dinámico mejorado */}
             <textarea
               placeholder="Escribe tu consulta aquí. Por ejemplo: 'Mi nombre es Juan Pérez, vivo en Madrid y mi email es juan.perez@email.com. ¿Puedes ayudarme con información sobre préstamos hipotecarios?'"
               value={state.inputText}
@@ -260,35 +258,38 @@ const InputPanel = () => {
               disabled={isDisabled}
               rows={6}
               style={{ paddingTop: textareaPaddingTop }}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-primary focus:border-brand-primary disabled:bg-gray-50 disabled:cursor-not-allowed placeholder-gray-500 resize-none transition-all duration-200"
+              className="w-full px-4 py-3 text-sm placeholder-gray-500 transition-all duration-200 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-brand-primary focus:border-brand-primary disabled:bg-gray-50 disabled:cursor-not-allowed"
             />
           </div>
 
-          {/* Info Text - Sin cambios */}
           <div className="flex items-center text-xs text-gray-500">
             <AlertCircle className="w-4 h-4 mr-2" />
             Verás 3 pasos: datos anonimizados → respuesta con datos falsos → respuesta con datos reales
           </div>
           
-          {/* Loading States - Sin cambios */}
-          {state.isLoading && !state.isStreaming && (
-            <div className="flex items-center space-x-2 text-xs text-brand-primary bg-brand-light bg-opacity-20 px-3 py-2 rounded-lg">
-              <div className="animate-pulse w-2 h-2 bg-brand-primary rounded-full"></div>
-              <span>Anonimizando datos personales...</span>
+          {state.isProcessingDocument && (
+            <div className="flex items-center px-3 py-2 space-x-2 text-xs text-purple-600 rounded-lg bg-purple-50">
+              <div className="w-2 h-2 bg-purple-600 rounded-full animate-pulse"></div>
+              <span>📄 Leyendo y procesando documento...</span>
+            </div>
+          )}
+          
+          {state.isLoading && !state.isProcessingDocument && !state.isStreaming && (
+            <div className="flex items-center px-3 py-2 space-x-2 text-xs rounded-lg text-brand-primary bg-brand-light bg-opacity-20">
+              <div className="w-2 h-2 rounded-full animate-pulse bg-brand-primary"></div>
+              <span>🔒 Anonimizando datos personales...</span>
             </div>
           )}
           
           {state.isStreaming && (
-            <div className="flex items-center space-x-2 text-xs text-blue-600 bg-blue-50 px-3 py-2 rounded-lg">
-              <div className="animate-pulse w-2 h-2 bg-blue-600 rounded-full"></div>
-              <span>Comparando respuestas en tiempo real...</span>
+            <div className="flex items-center px-3 py-2 space-x-2 text-xs text-blue-600 rounded-lg bg-blue-50">
+              <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+              <span>⚡ Generando respuestas en tiempo real...</span>
             </div>
           )}
         </div>
 
-        {/* Barra de Herramientas - Sin cambios */}
-        <div className="mt-6 flex items-center justify-between">
-          {/* Botones de Adjuntar */}
+        <div className="flex items-center justify-between mt-6">
           <div className="flex items-center space-x-2">
             <input
               ref={fileInputRef}
@@ -329,7 +330,6 @@ const InputPanel = () => {
               <span className="hidden sm:inline">Imagen</span>
             </Button>
 
-            {/* ✨ CAMBIO: Indicador mejorado */}
             {currentAttachment && (
               <div className="hidden md:flex items-center text-xs text-gray-600 bg-gray-50 px-3 py-1.5 rounded-lg">
                 {state.inputFile ? '📎 1 archivo' : '🖼️ 1 imagen'}
@@ -337,7 +337,6 @@ const InputPanel = () => {
             )}
           </div>
 
-          {/* Botón de Enviar - Sin cambios */}
           <Button
             onClick={handleSubmit}
             disabled={isDisabled || !hasContent}
@@ -345,40 +344,38 @@ const InputPanel = () => {
             className="px-8 py-3"
           >
             <Send className="w-4 h-4 mr-2" />
-            {state.isLoading && !state.isStreaming
-              ? 'Anonimizando...'
-              : state.isStreaming 
-                ? 'Comparando respuestas...' 
-                : 'Iniciar Proceso Completo'}
+            {state.isProcessingDocument
+              ? 'Procesando documento...'
+              : state.isLoading && !state.isStreaming
+                ? 'Anonimizando...'
+                : state.isStreaming 
+                  ? 'Generando respuestas...' 
+                  : 'Iniciar Proceso'}
           </Button>
         </div>
 
-        {/* Error Display - Sin cambios */}
         {state.error && (
-          <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center space-x-2">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-            <span className="text-red-700 text-sm">{state.error}</span>
+          <div className="flex items-center p-4 mt-4 space-x-2 border border-red-200 rounded-lg bg-red-50">
+            <AlertCircle className="flex-shrink-0 w-5 h-5 text-red-500" />
+            <span className="text-sm text-red-700">{state.error}</span>
           </div>
         )}
 
-        {/* Dev Info - Sin cambios */}
         {process.env.NODE_ENV === 'development' && state.sessionId && (
-          <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+          <div className="p-3 mt-4 border border-gray-200 rounded-lg bg-gray-50">
             <p className="text-xs text-gray-600">
               <strong>Dev Info:</strong> Session ID: {state.sessionId}
             </p>
             <p className="text-xs text-gray-600">
-              Loading: {state.isLoading ? '🟢 Activo' : '🔴 Inactivo'} | 
-              Streaming: {state.isStreaming ? '🟢 Activo' : '🔴 Inactivo'}
+              Loading: {state.isLoading ? '🟢' : '🔴'} | 
+              Processing Doc: {state.isProcessingDocument ? '🟢' : '🔴'} |
+              Streaming: {state.isStreaming ? '🟢' : '🔴'}
             </p>
             <p className="text-xs text-gray-600">
               Paneles: 
               {state.anonymizedText ? ' ✅P1' : ' ❌P1'} |
               {state.modelResponse ? ' ✅P2' : ' ❌P2'} |
               {state.finalResponse || state.streamingText ? ' ✅P3' : ' ❌P3'}
-            </p>
-            <p className="text-xs text-gray-600">
-              Adjunto: {currentAttachment ? `✅ ${currentAttachment.name}` : '❌ Ninguno'}
             </p>
           </div>
         )}
