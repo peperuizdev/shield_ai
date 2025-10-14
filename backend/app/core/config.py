@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     Application settings loaded from environment variables.
     
     Uses pydantic_settings for validation and type conversion.
-    Settings can be overridden via environment variables with SHIELD_AI_ prefix.
+    Settings can be overridden via environment variables.
     """
     
     # Application settings
@@ -71,7 +71,7 @@ class Settings(BaseSettings):
         """Pydantic configuration."""
         env_file = ".env"
         env_file_encoding = "utf-8"
-        env_prefix = "SHIELD_AI_"
+        # REMOVED: env_prefix = "SHIELD_AI_"  # Sin prefijo para simplicidad con Render
         case_sensitive = False
         
 
@@ -109,7 +109,8 @@ def get_settings() -> Settings:
     Returns:
         Settings: Configured settings instance based on environment
     """
-    env = os.getenv("SHIELD_AI_ENVIRONMENT", "development").lower()
+    # CAMBIADO: Leer ENVIRONMENT directamente sin prefijo
+    env = os.getenv("ENVIRONMENT", "development").lower()
     
     if env == "production":
         return ProductionSettings()
