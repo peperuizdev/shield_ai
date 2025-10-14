@@ -18,6 +18,9 @@ const initialState = {
   isStreaming: false,
   streamingText: '',
   
+  // Estado de procesamiento de documentos
+  isProcessingDocument: false,
+  
   apiEndpoint: process.env.REACT_APP_API_ENDPOINT || 'http://localhost:8000',
   sessionId: null
 };
@@ -38,6 +41,8 @@ const actionTypes = {
   START_STREAMING: 'START_STREAMING',
   STOP_STREAMING: 'STOP_STREAMING',
   UPDATE_STREAMING_TEXT: 'UPDATE_STREAMING_TEXT',
+  
+  SET_PROCESSING_DOCUMENT: 'SET_PROCESSING_DOCUMENT',
   
   SET_SESSION_ID: 'SET_SESSION_ID',
   RESET_PROCESS: 'RESET_PROCESS'
@@ -81,6 +86,9 @@ function appReducer(state, action) {
     case actionTypes.UPDATE_STREAMING_TEXT:
       return { ...state, streamingText: action.payload };
     
+    case actionTypes.SET_PROCESSING_DOCUMENT:
+      return { ...state, isProcessingDocument: action.payload };
+    
     case actionTypes.SET_SESSION_ID:
       return { ...state, sessionId: action.payload };
     
@@ -92,6 +100,7 @@ function appReducer(state, action) {
         finalResponse: '',
         streamingText: '',
         isStreaming: false,
+        isProcessingDocument: false,
         error: null
       };
     
@@ -121,6 +130,8 @@ export function AppProvider({ children }) {
     startStreaming: () => dispatch({ type: actionTypes.START_STREAMING }),
     stopStreaming: () => dispatch({ type: actionTypes.STOP_STREAMING }),
     updateStreamingText: (text) => dispatch({ type: actionTypes.UPDATE_STREAMING_TEXT, payload: text }),
+    
+    setProcessingDocument: (processing) => dispatch({ type: actionTypes.SET_PROCESSING_DOCUMENT, payload: processing }),
     
     setSessionId: (id) => dispatch({ type: actionTypes.SET_SESSION_ID, payload: id }),
     resetProcess: () => dispatch({ type: actionTypes.RESET_PROCESS })

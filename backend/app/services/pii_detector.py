@@ -16,20 +16,18 @@ import time
 from typing import List, Dict, Tuple
 from datetime import datetime
 
-# Optional improved validators
 try:
-    from dateutil import parser as date_parser  # type: ignore
+    from dateutil import parser as date_parser
     DATEUTIL_AVAILABLE = True
 except Exception:
     DATEUTIL_AVAILABLE = False
 
 try:
-    import phonenumbers  # type: ignore
+    import phonenumbers
     PHONENUMBERS_AVAILABLE = True
 except Exception:
     PHONENUMBERS_AVAILABLE = False
 
-# Import synthetic data generator
 try:
     from services.synthetic_data_generator import EnhancedSyntheticDataGenerator
     SYNTHETIC_GENERATOR_AVAILABLE = True
@@ -99,17 +97,71 @@ def anonymize_with_hf(text: str, hf_model: str):
     return anonymized, mapping
 
 
+# def _regex_patterns() -> Dict[str, str]:
+#     return {
+#         'CARD': r"\b(?:\d[ -]*?){15,19}\b",
+#         'IBAN': r"\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]{4}){3,7}\s?[A-Z0-9]{1,4}\b",
+#         'EMAIL': r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+#         'PHONE': r"\+?\d[\d\s\-()]{6,}\d",
+#         'DNI': r"\b\d{8}[A-Z]\b",
+#     }
+# # ...existing code...
+# def _regex_patterns() -> Dict[str, str]:
+#     return {
+#         'CARD': r"\b(?:\d[ -]*?){15,19}\b",
+#         'IBAN': r"\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]{4}){3,7}\s?[A-Z0-9]{1,4}\b",
+#         'EMAIL': r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+#         'PHONE': r"\+?\d[\d\s\-()]{6,}\d",
+#         'DNI': r"\b\d{8}[A-Z]\b",
+#         'DATE': r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{1,2} de [a-zA-Z]+ de \d{4}\b",
+#         'HOUR': r"\b\d{1,2}:\d{2}(?:\s?[APMapm]{2})?\b",
+#         'URL': r"https?://[^\s]+",
+#         # Opcional: nombres capitalizados (puede dar falsos positivos)
+#         'NAME': r"\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)\b",
+#     }
+# # ...existing code...
+# ...existing code...
+import re
+
 def _regex_patterns() -> Dict[str, str]:
     return {
-        # ORDEN CRÍTICO: Patrones específicos PRIMERO, genéricos DESPUÉS
-        'DNI': r"\b(?:\d{8}[A-Za-z]|[XYZ]\d{7}[A-Za-z])\b",  # ✅ PRIMERO: DNIs y NIEs españoles (mayús/minús)
-        'PASSPORT': r"\b(?:[A-Z]{3}\d{6}|[A-Z]\d{8}|\d{2}[A-Z]{2}\d{5})\b",  # ✅ SEGUNDO: Pasaportes (específico)
-        'NSS': r"\b\d{2}\s?\d{4}\s?\d{4}\s?\d{1,2}\b",  # ✅ TERCERO: NSS español (específico)
-        'IBAN': r"\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]{4}){3,7}\s?[A-Z0-9]{1,4}\b",  # ✅ CUARTO: IBANs
-        'EMAIL': r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",  # ✅ QUINTO: Emails (muy específico)
-        'CARD': r"\b(?:\d[ -]*?){15,19}\b",  # ✅ SEXTO: Tarjetas (15-19 dígitos, evita conflicto con DNI)
-        'PHONE': r"\+?\d[\d\s\-()]{6,}\d",  # ❌ ÚLTIMO: Teléfonos (más genérico, puede capturar DNIs)
+        'CARD': r"\b(?:\d[ -]*?){15,19}\b",
+        'IBAN': r"\b[A-Z]{2}\s?\d{2}(?:\s?[A-Z0-9]{4}){3,7}\s?[A-Z0-9]{1,4}\b",
+        'EMAIL': r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+        'PHONE': r"\+?\d[\d\s\-()]{6,}\d",
+        'DNI': r"\b\d{8}[A-Z]\b",
+        'EMPRESA': r"\b[A-Z][a-zA-Z0-9&.\s]{2,}S\.A\.|\b[A-Z][a-zA-Z0-9&.\s]{2,}S\.L\.",
+        'DATE': r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b\d{1,2} de [a-zA-Z]+ de \d{4}\b",
+        'HOUR': r"\b\d{1,2}:\d{2}(?:\s?[APMapm]{2})?\b",
+        'URL': r"https?://[^\s]+",
+        # Opcional: nombres capitalizados (puede dar falsos positivos)
+        'NAME': r"\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+)\b",
     }
+
+def generate_token(entity_type, idx):
+    return f"__{entity_type.upper()}_{idx}__"
+
+def anonymize_text(text):
+    patterns = _regex_patterns()
+    mapping = {}
+    idx_counters = {k: 1 for k in patterns.keys()}
+    for entity_type, pattern in patterns.items():
+        def repl(match):
+            token = generate_token(entity_type, idx_counters[entity_type])
+            mapping[token] = match.group()
+            idx_counters[entity_type] += 1
+            return token
+        text = re.sub(pattern, repl, text)
+    return text, mapping
+
+# Ejemplo de uso dentro de run_pipeline:
+def run_pipeline(model, text, use_regex=True, pseudonymize=False, save_mapping=True):
+    mapping = {}
+    if use_regex:
+        text, mapping = anonymize_text(text)
+    # ...lógica existente para modelo, si aplica...
+    return text, mapping
+# ...existing code...
 
 
 def pseudonymize_value(value: str, key: str) -> str:
@@ -199,81 +251,39 @@ def _is_valid_iban(val: str) -> bool:
     return remainder == 1
 
 
-def _is_valid_nss(val: str) -> bool:
-    """Valida formato de Número de Seguridad Social español"""
-    # Eliminar espacios y guiones
-    clean = re.sub(r'[\s\-]', '', val)
-    
-    # Debe tener 11 o 12 dígitos (según formato español)
-    if not re.match(r'^\d{11,12}$', clean):
-        return False
-    
-    # Validaciones básicas del NSS español:
-    # - Los primeros 2 dígitos: código de provincia (01-99)
-    # - No puede empezar por 00
-    provincia = clean[:2]
-    if provincia == '00' or int(provincia) > 99:
-        return False
-    
-    # Validación adicional: no puede ser todo ceros o todo iguales
-    if clean == '0' * len(clean) or len(set(clean)) == 1:
-        return False
-    
-    return True
-
-
-def _is_valid_passport(val: str) -> bool:
-    """Valida formatos de pasaporte españoles e internacionales"""
-    val = val.strip()
-    
-    # Solo aceptar mayúsculas
-    if not val.isupper():
-        return False
-    
-    # Pasaporte español: 3 letras + 6 dígitos (ABC123456)
-    if re.match(r"^[A-Z]{3}\d{6}$", val):
-        return True
-    
-    # Pasaporte con 1 letra + 8 dígitos (A12345678)
-    if re.match(r"^[A-Z]\d{8}$", val):
-        return True
-    
-    # Pasaporte formato mixto: 2 dígitos + 2 letras + 5 dígitos (12AB34567)
-    if re.match(r"^\d{2}[A-Z]{2}\d{5}$", val):
-        return True
-    
-    return False
-
-
 def _is_valid_dni(val: str) -> bool:
-    """Valida DNI y NIE españoles usando algoritmo de letra de control"""
-    val = val.upper().strip()
+    if not re.match(r"^\d{8}[A-Z]$", val):
+        return False
     
-    # Validar formato DNI (8 dígitos + letra)
-    if re.match(r"^\d{8}[A-Z]$", val):
-        letters = "TRWAGMYFPDXBNJZSQVHLCKE"
-        number = int(val[:8])
-        expected_letter = letters[number % 23]
-        return val[8] == expected_letter
+    letters = "TRWAGMYFPDXBNJZSQVHLCKE"
+    number = int(val[:8])
+    expected_letter = letters[number % 23]
+    return val[8] == expected_letter
+
+
+def _is_valid_dob(val: str) -> bool:
+    date_patterns = [
+        (r'^\d{2}[-/]\d{2}[-/]\d{4}$', ['%d/%m/%Y', '%d-%m-%Y']),
+        (r'^\d{4}[-/]\d{2}[-/]\d{2}$', ['%Y-%m-%d', '%Y/%m/%d']),
+        (r'^\d{8}$', ['%Y%m%d', '%d%m%Y'])
+    ]
     
-    # Validar formato NIE ([XYZ] + 7 dígitos + letra)
-    elif re.match(r"^[XYZ]\d{7}[A-Z]$", val):
-        letters = "TRWAGMYFPDXBNJZSQVHLCKE"
-        
-        # Convertir primera letra a número según algoritmo NIE
-        first_char = val[0]
-        if first_char == 'X':
-            number_str = '0' + val[1:8]
-        elif first_char == 'Y':
-            number_str = '1' + val[1:8]
-        elif first_char == 'Z':
-            number_str = '2' + val[1:8]
-        else:
-            return False
-            
-        number = int(number_str)
-        expected_letter = letters[number % 23]
-        return val[8] == expected_letter
+    for pattern, formats in date_patterns:
+        if re.match(pattern, val):
+            for fmt in formats:
+                try:
+                    parsed_date = datetime.strptime(val.replace('/', '-') if '/' in val else val, fmt.replace('/', '-'))
+                    
+                    if parsed_date.year < 1920 or parsed_date.year > 2010:
+                        return False
+                    
+                    current_year = datetime.now().year
+                    if parsed_date.year > current_year:
+                        return False
+                    
+                    return True
+                except ValueError:
+                    continue
     
     return False
 
@@ -319,13 +329,8 @@ def validate_mapping(mapping: Dict[str, str]) -> Tuple[Dict[str, str], Dict[str,
                     valid[tok] = orig
                 else:
                     suspects[tok] = orig
-            elif lower.startswith('passport_') or lower.startswith('[passport') or lower.startswith('passport'):
-                if _is_valid_passport(orig):
-                    valid[tok] = orig
-                else:
-                    suspects[tok] = orig
-            elif lower.startswith('nss_') or lower.startswith('[nss') or lower.startswith('nss'):
-                if _is_valid_nss(orig):
+            elif lower.startswith('dob_') or lower.startswith('[dob') or lower.startswith('dob'):
+                if _is_valid_dob(orig):
                     valid[tok] = orig
                 else:
                     suspects[tok] = orig
@@ -591,6 +596,41 @@ def resolve_matches(hf_matches, regex_matches):
     return chosen_sorted
 
 
+def _is_likely_dob(text: str) -> bool:
+    if not text or len(text) < 6:
+        return False
+    
+    digits = re.sub(r'[^\d]', '', text)
+    if len(digits) < 6 or len(digits) > 8:
+        return False
+    
+    date_patterns = [
+        r'^\d{2}[-/]\d{2}[-/]\d{4}$',
+        r'^\d{4}[-/]\d{2}[-/]\d{2}$',
+        r'^\d{8}$'
+    ]
+    
+    matches_pattern = any(re.match(pattern, text.strip()) for pattern in date_patterns)
+    if not matches_pattern:
+        return False
+    
+    if DATEUTIL_AVAILABLE:
+        try:
+            parsed = date_parser.parse(text, fuzzy=False)
+            if 1920 <= parsed.year <= 2010:
+                return True
+        except Exception:
+            pass
+    
+    for year_candidate in [text[:4], text[-4:], text[2:6], text[4:8]]:
+        if year_candidate.isdigit():
+            year = int(year_candidate)
+            if 1920 <= year <= 2010:
+                return True
+    
+    return False
+
+
 def apply_replacements_from_matches(original_text: str, matches: List[Dict], use_pseudo: bool = False, pseudo_key: str = None, use_realistic_fake: bool = False):
     anonymized = original_text
     mapping: Dict[str, str] = {}
@@ -618,21 +658,14 @@ def apply_replacements_from_matches(original_text: str, matches: List[Dict], use
         
         if orig.strip().isdigit() and len(orig.strip()) < 4:
             continue
-            
-        is_date_like = False
-        if DATEUTIL_AVAILABLE:
-            try:
-                d = date_parser.parse(orig, fuzzy=False)
-                if 1900 <= d.year <= 2025:
-                    is_date_like = True
-            except Exception:
-                is_date_like = False
-        else:
-            if re.match(r"^\d{2}[-/]\d{2}[-/]\d{4}$", orig) or re.match(r"^\d{4}[-/]\d{2}[-/]\d{2}$", orig):
-                is_date_like = True
-
+        
+        is_date_like = _is_likely_dob(orig)
+        
         if label.upper() in ('PHONE', 'PHONE_R', 'PHONE_HF') and is_date_like:
             label = 'DOB'
+        elif label.upper() == 'MISC' and is_date_like:
+            label = 'DOB'
+        
         keylabel = label
         if src == 'hf':
             ns = 'HF'
@@ -778,11 +811,6 @@ def run_pipeline(model: str, text: str, use_regex: bool = False, pseudonymize: b
 
 
 def cli(argv: List[str]):
-    """Command-line interface wrapper for running the pipeline from this module.
-
-    This mirrors the original pipeline.py CLI so the interactive prompts work
-    the same as before.
-    """
     import argparse
 
     p = argparse.ArgumentParser(description="Anon pipeline using HF NER (HF-only mode)")

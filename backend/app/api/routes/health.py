@@ -212,7 +212,7 @@ async def get_system_stats():
         redis_stats = get_redis_stats()
         
         # Get session statistics (would be implemented in session manager)
-        from services.session_manager import list_active_sessions, cleanup_expired_sessions
+        from services.session.manager import list_active_sessions, cleanup_expired_sessions
         
         active_sessions = list_active_sessions()
         cleanup_info = cleanup_expired_sessions()
