@@ -26,7 +26,13 @@ router = APIRouter(prefix="/health", tags=["Health"])
 
 
 @router.get(
-    "/",
+    "",  # Sin barra - responde en /api/health
+    response_model=HealthCheckResponse,
+    summary="Basic health check",
+    description="Get basic health status of the application and its services"
+)
+@router.get(
+    "/",  # Con barra - responde en /api/health/
     response_model=HealthCheckResponse,
     summary="Basic health check",
     description="Get basic health status of the application and its services"
