@@ -339,6 +339,7 @@ def create_app() -> FastAPI:
     
     # Add basic root endpoint
     @app.get("/", tags=["Root"])
+    @app.head("/", tags=["Root"])
     async def root():
         """Root endpoint with application information."""
         return {

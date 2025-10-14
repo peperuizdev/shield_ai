@@ -25,41 +25,47 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/health", tags=["Health"])
 
 
-@router.get(
-    "",  # Sin barra - responde en /api/health
-    response_model=HealthCheckResponse,
-    summary="Basic health check",
-    description="Get basic health status of the application and its services"
-)
-@router.get(
-    "/",  # Con barra - responde en /api/health/
-    response_model=HealthCheckResponse,
-    summary="Basic health check",
-    description="Get basic health status of the application and its services"
-)
+"""
+Health check endpoints for Shield AI.
+"""
+
+import time
+import logging
+from datetime import datetime
+from typing import Dict, Any
+
+from fastapi import APIRouter
+from fastapi.responses import JSONResponse
+
+from core.app import get_app_health
+
+logger = logging.getLogger(__name__)
+
+# Create router WITHOUT prefix
+router = APIRouter(tags=["Health"])
+
+
+@router.get("/health")
+@router.get("/health/")
+@router.head("/health")
+@router.head("/health/")
 async def health_check():
     """
     Basic health check endpoint.
-    
-    Returns overall system health status including:
-    - Application status
-    - Redis connectivity
-    - Service availability
-    
-    Returns:
-        HealthCheckResponse: Health status information
+    Works with GET and HEAD, with or without trailing slash.
     """
     try:
         app_health = get_app_health()
         
-        return HealthCheckResponse(
-            success=True,
-            message="Health check completed",
-            status=app_health["status"],
-            services=app_health["services"],
-            version=app_health["version"],
-            environment=app_health["environment"]
-        )
+        return {
+            "success": True,
+            "timestamp": datetime.now().isoformat(),
+            "message": "Health check completed",
+            "status": app_health["status"],
+            "services": app_health["services"],
+            "version": app_health["version"],
+            "environment": app_health["environment"]
+        }
         
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
@@ -72,6 +78,20 @@ async def health_check():
                 "timestamp": datetime.now().isoformat()
             }
         )
+
+
+@router.get("/healthz")
+@router.head("/healthz")
+async def healthz():
+    """Kubernetes-style health check."""
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
+
+@router.get("/readiness")
+@router.head("/readiness")
+async def readiness():
+    """Readiness probe."""
+    return {"ready": True, "timestamp": datetime.now().isoformat()}
 
 
 @router.get(
