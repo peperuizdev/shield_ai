@@ -1,6 +1,5 @@
 # Shield AI Monitoring Setup Script (Windows PowerShell)
 # Configura e inicia el stack completo de monitoreo
-
 param(
     [Parameter(Position=0)]
     [ValidateSet("start", "stop", "restart", "status", "logs", "clean", "help")]
