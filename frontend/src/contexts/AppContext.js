@@ -4,12 +4,18 @@ const initialState = {
   isLoading: false,
   error: null,
   
-  // Estados del proceso de anonimización
+  // Estados del proceso de anonimización de texto
   inputText: '',
   inputFile: null,
-  inputImage: null,
   
-  // Estados de los paneles
+  // Estados de imagen
+  inputImage: null,
+  originalImagePreview: null,
+  anonymizedImage: null,
+  imageDetectionInfo: null,
+  isProcessingImage: false,
+  
+  // Estados de los paneles de texto
   anonymizedText: '',
   modelResponse: '',
   finalResponse: '',
@@ -33,6 +39,11 @@ const actionTypes = {
   SET_INPUT_TEXT: 'SET_INPUT_TEXT',
   SET_INPUT_FILE: 'SET_INPUT_FILE',
   SET_INPUT_IMAGE: 'SET_INPUT_IMAGE',
+  
+  SET_ORIGINAL_IMAGE_PREVIEW: 'SET_ORIGINAL_IMAGE_PREVIEW',
+  SET_ANONYMIZED_IMAGE: 'SET_ANONYMIZED_IMAGE',
+  SET_IMAGE_DETECTION_INFO: 'SET_IMAGE_DETECTION_INFO',
+  SET_PROCESSING_IMAGE: 'SET_PROCESSING_IMAGE',
   
   SET_ANONYMIZED_TEXT: 'SET_ANONYMIZED_TEXT',
   SET_MODEL_RESPONSE: 'SET_MODEL_RESPONSE',
@@ -68,6 +79,18 @@ function appReducer(state, action) {
     case actionTypes.SET_INPUT_IMAGE:
       return { ...state, inputImage: action.payload };
     
+    case actionTypes.SET_ORIGINAL_IMAGE_PREVIEW:
+      return { ...state, originalImagePreview: action.payload };
+    
+    case actionTypes.SET_ANONYMIZED_IMAGE:
+      return { ...state, anonymizedImage: action.payload };
+    
+    case actionTypes.SET_IMAGE_DETECTION_INFO:
+      return { ...state, imageDetectionInfo: action.payload };
+    
+    case actionTypes.SET_PROCESSING_IMAGE:
+      return { ...state, isProcessingImage: action.payload };
+    
     case actionTypes.SET_ANONYMIZED_TEXT:
       return { ...state, anonymizedText: action.payload };
     
@@ -101,6 +124,9 @@ function appReducer(state, action) {
         streamingText: '',
         isStreaming: false,
         isProcessingDocument: false,
+        anonymizedImage: null,
+        imageDetectionInfo: null,
+        isProcessingImage: false,
         error: null
       };
     
@@ -122,6 +148,11 @@ export function AppProvider({ children }) {
     setInputText: (text) => dispatch({ type: actionTypes.SET_INPUT_TEXT, payload: text }),
     setInputFile: (file) => dispatch({ type: actionTypes.SET_INPUT_FILE, payload: file }),
     setInputImage: (image) => dispatch({ type: actionTypes.SET_INPUT_IMAGE, payload: image }),
+    
+    setOriginalImagePreview: (preview) => dispatch({ type: actionTypes.SET_ORIGINAL_IMAGE_PREVIEW, payload: preview }),
+    setAnonymizedImage: (image) => dispatch({ type: actionTypes.SET_ANONYMIZED_IMAGE, payload: image }),
+    setImageDetectionInfo: (info) => dispatch({ type: actionTypes.SET_IMAGE_DETECTION_INFO, payload: info }),
+    setProcessingImage: (processing) => dispatch({ type: actionTypes.SET_PROCESSING_IMAGE, payload: processing }),
     
     setAnonymizedText: (text) => dispatch({ type: actionTypes.SET_ANONYMIZED_TEXT, payload: text }),
     setModelResponse: (response) => dispatch({ type: actionTypes.SET_MODEL_RESPONSE, payload: response }),
