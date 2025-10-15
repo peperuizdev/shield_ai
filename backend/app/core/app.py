@@ -269,6 +269,10 @@ def create_app() -> FastAPI:
             allowed_hosts=settings.allowed_hosts
         )
     
+    # Add metrics middleware
+    from middleware.metrics_middleware import MetricsMiddleware
+    app.add_middleware(MetricsMiddleware)
+    
     # Add request timing middleware
     @app.middleware("http")
     async def add_process_time_header(request: Request, call_next):

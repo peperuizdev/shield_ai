@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key")
     gemini_api_key: Optional[str] = Field(default=None, description="Google Gemini API key")
     anthropic_api_key: Optional[str] = Field(default=None, description="Anthropic API key")
+    grok_api_key: Optional[str] = Field(default=None, description="Grok API key")
     
     # Performance settings
     max_request_size: int = Field(default=1048576, description="Max request size in bytes (1MB)")
