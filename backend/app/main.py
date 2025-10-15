@@ -25,7 +25,7 @@ app.include_router(deanonymization_router, tags=["Deanonymization"])
 app.include_router(chat_router, tags=["Chat"])
 app.include_router(document_processing_router, tags=["Document Processing"])
 app.include_router(debug_router, tags=["Debug"])
-app.include_router(image_anonymization_router, tags=["Image Anonymization"])
+app.include_router(image_router, tags=["Image Anonymization"])
 
 
 # === MAIN APPLICATION ENTRY POINT ===

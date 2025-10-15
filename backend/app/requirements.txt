@@ -1,0 +1,16 @@
+certifi==2025.7.14
+cffi==1.17.1
+charset-normalizer==3.4.2
+platformdirs==4.4.0
+prompt_toolkit==3.0.51
+python-dateutil==2.9.0.post0
+pytz==2025.2
+pywin32==311
+pyzmq==24.0.1
+six==1.17.0
+traitlets==5.14.3
+types-python-dateutil==2.9.0.20250822
+typing_extensions==4.14.1
+tzdata==2025.2
+urllib3==2.5.0
+zipp==3.23.0
