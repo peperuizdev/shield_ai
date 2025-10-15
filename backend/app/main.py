@@ -8,7 +8,8 @@ Contains application setup and router mounting.
 # Import shared infrastructure
 from core.app import app
 
-# Mount routers for health, sessions, anonymization, deanonymization, chat, debug, metrics and alerts
+# Mount routers for health, sessions, anonymization, deanonymization, image, chat, debug, metrics and alerts
+from api.routes.image_anonymization import router_image as image_router
 from api.routes.health import router as health_router
 from api.routes.sessions import router as sessions_router
 from api.routes.anonymization import router as anonymization_router
@@ -28,6 +29,7 @@ app.include_router(document_processing_router, tags=["Document Processing"])
 app.include_router(debug_router, tags=["Debug"])
 app.include_router(metrics_router, tags=["Metrics"])
 app.include_router(alerts_router, tags=["Alerts"])
+app.include_router(image_router, tags=["Image Anonymization"])
 
 
 # === MAIN APPLICATION ENTRY POINT ===
