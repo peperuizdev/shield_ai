@@ -1,3 +1,10 @@
+"""
+Image Anonymization Router for Shield AI
+
+FastAPI router for image anonymization endpoints.
+Handles face and license plate detection and anonymization.
+"""
+
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import Optional
@@ -12,10 +19,9 @@ from services.image_anonymizer import (
     load_image_from_bytes
 )
 
-from services.session_manager import (
+from services.session.image_data import (
     store_anonymization_map,
-    get_anonymization_map,
-    get_session_manager
+    get_anonymization_map
 )
 
 from utils.helpers import generate_session_id
@@ -33,7 +39,7 @@ async def anonymize_image(
     face_method: Optional[str] = Form("blur"),
     plate_method: Optional[str] = Form("pixelate"),
     store_originals: Optional[bool] = Form(True),
-    return_format: Optional[str] = Form("base64")  # "base64" or "binary"
+    return_format: Optional[str] = Form("base64")
 ):
     try:
         logger.info(f"📸 Processing image: {file.filename}")

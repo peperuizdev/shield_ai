@@ -60,16 +60,29 @@ class ImageAnonymizer:
         return self._yolo_model
     
     def _resize_if_needed(self, img: np.ndarray) -> Tuple[np.ndarray, float]:
-
+        if img is None or img.size == 0:
+            raise ValueError("Invalid image: empty or None")
+        
         h, w = img.shape[:2]
+        
+        if h <= 0 or w <= 0:
+            raise ValueError(f"Invalid image dimensions: {w}x{h}")
+        
         max_w, max_h = self.max_image_size
         
         if w <= max_w and h <= max_h:
             return img, 1.0
         
         scale = min(max_w / w, max_h / h)
+        
+        if scale <= 0:
+            raise ValueError(f"Invalid scale factor: {scale}")
+        
         new_w = int(w * scale)
         new_h = int(h * scale)
+        
+        if new_w <= 0 or new_h <= 0:
+            raise ValueError(f"Invalid target dimensions: {new_w}x{new_h}")
         
         resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
         logger.info(f"Image resized from {w}x{h} to {new_w}x{new_h} (scale={scale:.2f})")
@@ -255,7 +268,6 @@ class ImageAnonymizer:
         x1, y1, x2, y2 = bbox
         region = img[y1:y2, x1:x2].copy()
         
-        # Encode as PNG to preserve quality
         _, buffer = cv2.imencode('.png', region)
         region_base64 = base64.b64encode(buffer).decode('utf-8')
         
