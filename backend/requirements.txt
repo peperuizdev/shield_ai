@@ -46,8 +46,6 @@ Pillow==10.1.0
 retinaface==1.1.1       
 mtcnn==0.1.1             
 
-# Object Detection (for license plates)
-ultralytics==8.0.200     
 
 # -------------------------
 # HTTP & Networking (CORREGIDO)

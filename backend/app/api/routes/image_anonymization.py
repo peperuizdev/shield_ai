@@ -2,7 +2,7 @@
 Image Anonymization Router for Shield AI
 
 FastAPI router for image anonymization endpoints.
-Handles face and license plate detection and anonymization.
+Handles face detection and anonymization.
 """
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
@@ -35,9 +35,7 @@ async def anonymize_image(
     file: UploadFile = File(...),
     session_id: Optional[str] = Form(None),
     detect_faces: Optional[bool] = Form(True),
-    detect_plates: Optional[bool] = Form(True),
     face_method: Optional[str] = Form("blur"),
-    plate_method: Optional[str] = Form("pixelate"),
     store_originals: Optional[bool] = Form(True),
     return_format: Optional[str] = Form("base64")
 ):
@@ -81,16 +79,12 @@ async def anonymize_image(
                 detail=f"Could not load image: {str(e)}"
             )
         
-        anonymizer = ImageAnonymizer(
-            face_method=face_method,
-            plate_method=plate_method
-        )
+        anonymizer = ImageAnonymizer(face_method=face_method)
         
         try:
             img_anonymized, anonymization_map = anonymizer.anonymize_image(
                 img=img,
                 detect_faces=detect_faces,
-                detect_plates=detect_plates,
                 store_originals=store_originals
             )
             logger.info(f"✅ Image anonymized successfully")
@@ -102,10 +96,9 @@ async def anonymize_image(
             )
         
         faces_detected = len(anonymization_map.get('faces', []))
-        plates_detected = len(anonymization_map.get('plates', []))
-        total_detections = faces_detected + plates_detected
+        total_detections = faces_detected
         
-        logger.info(f"📊 Detections: {faces_detected} faces, {plates_detected} plates")
+        logger.info(f"📊 Detections: {faces_detected} faces")
         
         try:
             store_anonymization_map(session_id, anonymization_map)
@@ -124,8 +117,7 @@ async def anonymize_image(
                 media_type="image/jpeg",
                 headers={
                     "X-Session-ID": session_id,
-                    "X-Faces-Detected": str(faces_detected),
-                    "X-Plates-Detected": str(plates_detected)
+                    "X-Faces-Detected": str(faces_detected)
                 }
             )
         else:
@@ -136,7 +128,6 @@ async def anonymize_image(
                 "pii_detected": total_detections > 0,
                 "detections": {
                     "faces": faces_detected,
-                    "plates": plates_detected,
                     "total": total_detections
                 },
                 "image_info": {
@@ -183,21 +174,10 @@ async def get_image_anonymization_map(session_id: str):
                     'has_original': bool(face.get('original_base64'))
                 }
                 for face in anonymization_map.get('faces', [])
-            ],
-            'plates': [
-                {
-                    'id': plate.get('id'),
-                    'bbox': plate.get('bbox'),
-                    'confidence': plate.get('confidence'),
-                    'detector': plate.get('detector'),
-                    'method': plate.get('method'),
-                    'has_original': bool(plate.get('original_base64'))
-                }
-                for plate in anonymization_map.get('plates', [])
             ]
         }
         
-        total_detections = len(map_metadata['faces']) + len(map_metadata['plates'])
+        total_detections = len(map_metadata['faces'])
         
         return {
             "success": True,
@@ -261,8 +241,7 @@ async def deanonymize_image(
                 "success": True,
                 "session_id": session_id,
                 "restored_image": f"data:image/jpeg;base64,{img_base64}",
-                "regions_restored": len(anonymization_map.get('faces', [])) + 
-                                  len(anonymization_map.get('plates', []))
+                "regions_restored": len(anonymization_map.get('faces', []))
             }
     
     except HTTPException:
@@ -278,7 +257,7 @@ async def deanonymize_image(
 @router_image.get("/test-image-detector")
 async def test_image_detector():
 
-    from services.image_anonymizer import FACE_DETECTOR_TYPE, PLATE_DETECTOR
+    from services.image_anonymizer import FACE_DETECTOR_TYPE
     
     capabilities = {
         "face_detection": {
@@ -286,14 +265,8 @@ async def test_image_detector():
             "detector_type": FACE_DETECTOR_TYPE,
             "methods": ["retinaface", "mtcnn", "haar"]
         },
-        "plate_detection": {
-            "available": PLATE_DETECTOR is not None or True,  
-            "detector_type": "yolo" if PLATE_DETECTOR else "contour",
-            "methods": ["yolo", "contour"]
-        },
         "anonymization_methods": {
-            "faces": ["blur", "pixelate", "black"],
-            "plates": ["blur", "pixelate", "black"]
+            "faces": ["blur", "pixelate", "black"]
         },
         "supported_formats": ["image/jpeg", "image/png", "image/webp"],
         "max_file_size_mb": 10
