@@ -1,0 +1,60 @@
+# render.yaml - Colocar en la RAÍZ del proyecto
+services:
+  # Redis Database
+  - type: redis
+    name: redis-llm
+    plan: free
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+  # Backend FastAPI
+  - type: web
+    name: llm-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /api/health/
+    envVars:
+      # Environment
+      - key: ENVIRONMENT
+        value: production
+      
+      - key: DEBUG
+        value: false
+      
+      # Redis connection (automático desde el servicio Redis)
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: redis-llm
+          property: host
+      
+      - key: REDIS_PORT
+        fromService:
+          type: redis
+          name: redis-llm
+          property: port
+      
+      # API Keys (configurar manualmente en Render Dashboard)
+      - key: OPENAI_API_KEY
+        sync: false
+      
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  # Frontend React/Next.js
+  - type: web
+    name: llm-frontend
+    env: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: free
+    envVars:
+      # URL del backend
+      - key: REACT_APP_API_URL
+        value: https://llm-backend.onrender.com
+      
+      # Si usas Next.js:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://llm-backend.onrender.com
