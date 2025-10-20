@@ -872,3 +872,28 @@ def cli(argv: List[str]):
 if __name__ == '__main__':
     import sys
     cli(sys.argv[1:])
+    
+    
+    
+    """
+    
+    El cambio clave que permitió reconocer mejor el **texto libre** fue la ampliación y mejora de la función `_regex_patterns()`.
+
+### Antes:
+Solo se detectaban patrones muy concretos (tarjeta, IBAN, email, teléfono, DNI).
+
+### Ahora:
+Se añadieron nuevos patrones para detectar más tipos de datos en texto libre:
+- **EMPRESA**: nombres de empresas (S.A., S.L.)
+- **DATE**: fechas en varios formatos
+- **HOUR**: horas
+- **URL**: enlaces web
+- **NAME**: nombres propios capitalizados (aunque puede dar falsos positivos)
+
+
+```
+
+**Resumen:**  
+El cambio fue la inclusión de más patrones regex en `_regex_patterns()`, permitiendo detectar y anonimizar automáticamente más tipos de datos personales en texto libre, no solo campos estructurados.
+    _summary_
+    """
