@@ -1,0 +1,51 @@
+Para corregir el error de backend relacionado con Redis, sigue estos pasos:
+
+### 1. Asegúrate de que Docker Desktop esté abierto
+- Abre **Docker Desktop** en tu PC y espera a que diga "Docker is running".
+
+### 2. Verifica que el servicio Redis esté definido en tu docker-compose.yml
+- Debes tener una sección similar a esta en tu archivo:
+  ```yaml
+  services:
+    redis:
+      image: redis:alpine
+      ports:
+        - "6379:6379"
+  ```
+- Si no está, agrégala.
+
+### 3. Inicia los servicios con Docker Compose
+- En la terminal, ejecuta:
+  ```sh
+  docker-compose up --build
+  ```
+- Esto levantará todos los servicios, incluido Redis.
+
+### 4. Verifica que Redis está corriendo
+- Puedes comprobarlo con:
+  ```sh
+  docker ps
+  ```
+- Debes ver un contenedor llamado algo como `shield_ai-redis-1`.
+
+### 5. Si el backend sigue fallando
+- Revisa los logs del backend y asegúrate de que no haya errores de conexión a Redis.
+- Si ves el error, reinicia Docker Desktop y vuelve a ejecutar `docker-compose up --build`.
+
+---
+
+**Resumen:**  
+Abre Docker Desktop, asegúrate de que Redis esté en tu docker-compose.yml, y ejecuta `docker-compose up --build`. Redis debe estar corriendo antes de que el backend pueda funcionar.
+
+
+
+
+
+
+
+
+
+
+Si el error persiste, revisa que el contenedor esté usando la carpeta correcta y que el archivo no esté corrupto.
+Puedes probar con npm run dev o npm start manualmente dentro del contenedor para ver si funciona.
+Si tu Dockerfile/front usa npm run dev, este archivo ya lo soporta.

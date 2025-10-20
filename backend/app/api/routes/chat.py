@@ -13,10 +13,10 @@ from pydantic import BaseModel
 from typing import Optional, Dict
 import logging
 import time
-import json
 
 from services.llm_integration import MultiProviderLLMClient, LLMClientPropuesta
 from services.deanonymization_service import generate_real_time_dual_stream
+from services.session.llm_data import store_request_text  # Asegúrate de que existe
 
 router = APIRouter(prefix="/chat", tags=["Chat"])
 logger = logging.getLogger(__name__)
@@ -75,37 +75,34 @@ async def chat_stream_propuesta(
         if file:
             try:
                 from services.document_processing.factory import process_document
-                
                 file_content = await file.read()
-                
                 if len(file_content) == 0:
                     raise HTTPException(status_code=400, detail="Archivo vacío")
-                
                 result = process_document(
                     file_content=file_content,
                     filename=file.filename,
                     content_type=file.content_type
                 )
-                
                 extracted_text = result['text']
-                
                 if message:
                     input_text = f"Consulta del usuario: {message}\n\nContexto del documento:\n{extracted_text}"
                 else:
                     input_text = extracted_text
-                
                 logger.info(f"Texto extraído del documento: {len(extracted_text)} caracteres")
-                
             except HTTPException:
                 raise
             except Exception as e:
                 logger.error(f"Error procesando documento: {str(e)}")
                 raise HTTPException(status_code=400, detail=f"Error procesando documento: {str(e)}")
-        
         elif message:
             input_text = message
         else:
             raise HTTPException(status_code=400, detail="Debe proporcionar 'message' o 'file'")
+
+        # Guarda el texto original en Redis
+        if input_text and session_id:
+            store_request_text(session_id, input_text)
+            logger.info(f"✅ Texto original guardado en Redis para sesión {session_id}")
 
         if save_mapping and session_id:
             try:

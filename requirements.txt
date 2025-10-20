@@ -100,3 +100,19 @@ python-docx==1.1.0
 openpyxl==3.1.2
 
 aiohttp
+prometheus_client
+psutil
+opencv-python
+fastapi
+uvicorn
+prometheus_client
+psutil
+opencv-python
+pillow
+numpy
+scikit-learn
+matplotlib
+python-jose
+email-validator
+aiofiles
+gunicorn

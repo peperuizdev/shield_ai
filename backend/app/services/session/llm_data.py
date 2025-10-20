@@ -10,7 +10,6 @@ from typing import Optional
 
 from .storage import get_storage
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -118,3 +117,11 @@ def get_anonymized_request(session_id: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"Error retrieving anonymized request for session {session_id}: {e}")
         return None
+
+
+def store_request_text(session_id: str, text: str) -> bool:
+    """
+    Guarda el texto original del usuario en Redis para la sesión dada.
+    """
+    storage = get_storage()
+    return storage.store_text("request", session_id, text)
