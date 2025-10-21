@@ -216,6 +216,11 @@ frontend/
 - **AlertManager**: Sistema de alertas automáticas
 - **Nginx**: Servidor web de producción para frontend
 
+### Diagrama de Arquitectura (La Solución)
+![diagrama](https://i.postimg.cc/L8RWXBKp/Screenshot-2025-10-21-at-10-51-46.png)
+
+
+
 ## Instalación y Configuración
 
 ### Prerrequisitos
